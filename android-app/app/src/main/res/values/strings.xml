@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Elhafez Pharmacy</string>
+    <string name="configure_title">رابط Elhafez Pharmacy</string>
+    <string name="configure_message">أدخل رابط Railway الكامل لنظام الصيدلية. مثال: https://your-pharmacy.up.railway.app</string>
+</resources>

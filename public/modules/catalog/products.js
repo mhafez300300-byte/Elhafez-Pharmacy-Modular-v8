@@ -1,0 +1,60 @@
+(()=>{
+const A=window.PharmaApp,{register,all,get,put,id,esc,money,pageHead,empty,badge,stockValue,semanticValue,valueTone,stockFor,packSize,audit,toast,modal,closeModal,num,daysTo,fmtDT}=A;
+
+// Superseded dashboard page removed in v6 clean core.
+
+
+function productForm(p={}){return `<form id="productForm" class="product-form-clean">
+ <fieldset class="form-section product-basic"><legend>البيانات الأساسية</legend><div class="form-grid three">
+ <label>اسم الصنف<input name="name" required value="${esc(p.name||'')}"></label>
+ <label>الباركود الأساسي<input name="barcode" value="${esc(p.barcode||'')}"></label>
+ <label>التصنيف<select name="category"><option ${p.category==='أدوية'?'selected':''}>أدوية</option><option ${p.category==='مستحضرات تجميل'?'selected':''}>مستحضرات تجميل</option><option ${p.category==='مكملات'?'selected':''}>مكملات</option><option ${p.category==='مستلزمات'?'selected':''}>مستلزمات</option><option ${p.category==='أخرى'?'selected':''}>أخرى</option></select></label>
+ <label>سعر الشراء / علبة<input type="number" min="0" step="0.01" name="buyPrice" required value="${num(p.buyPrice)}"></label>
+ <label>سعر البيع / علبة<input type="number" min="0" step="0.01" name="sellPrice" required value="${num(p.sellPrice)}"></label>
+ <label>عدد الشرائط / علبة<input type="number" min="1" step="1" name="packToStrip" required value="${num(p.packToStrip)||1}"></label>
+ <label>عدد الوحدات / شريط<input type="number" min="1" step="1" name="stripToUnit" required value="${num(p.stripToUnit)||1}"></label>
+ <label>حد إعادة الطلب بالعلبة<input type="number" min="0" step="1" name="reorderPoint" value="${num(p.reorderPoint??p.minStock)||0}"></label>
+ <label>الحالة<select name="status"><option value="active" ${(p.status||'active')==='active'?'selected':''}>نشط</option><option value="inactive" ${p.status==='inactive'?'selected':''}>موقوف</option></select></label>
+ </div></fieldset>
+ <details class="form-section product-advanced"><summary><span>تفاصيل متقدمة</span><small>المادة الفعالة، الضرائب، التتبع، الرقابة والبدائل</small></summary><div class="form-grid three section-gap-sm">
+ <label>باركودات إضافية<input name="barcodes" value="${esc(Array.isArray(p.barcodes)?p.barcodes.join(', '):(p.barcodes||''))}" placeholder="افصل بفاصلة"></label>
+ <label>GTIN / كود التتبع<input name="gtin" value="${esc(p.gtin||'')}"></label>
+ <label>المادة الفعالة<input name="active" value="${esc(p.active||'')}"></label>
+ <label>التركيز<input name="strength" value="${esc(p.strength||'')}"></label>
+ <label>الشكل الدوائي<input name="form" value="${esc(p.form||'')}"></label>
+ <label>الشركة المصنعة<input name="company" value="${esc(p.company||'')}"></label>
+ <label>الموقع على الرف<input name="location" value="${esc(p.location||'')}"></label>
+ <label>سعر الشريط (اختياري)<input type="number" min="0" step="0.01" name="stripPrice" value="${num(p.stripPrice)||''}"></label>
+ <label>سعر الوحدة (اختياري)<input type="number" min="0" step="0.01" name="unitPrice" value="${num(p.unitPrice)||''}"></label>
+ <label>الحد الأدنى بالعلبة<input type="number" min="0" step="1" name="minStock" value="${num(p.minStock)||0}"></label>
+ <label>نوع كود الصنف<select name="itemCodeType"><option value="GS1" ${(p.itemCodeType||'GS1')==='GS1'?'selected':''}>GS1</option><option value="EGS" ${p.itemCodeType==='EGS'?'selected':''}>EGS</option><option value="INTERNAL" ${p.itemCodeType==='INTERNAL'?'selected':''}>داخلي</option></select></label>
+ <label>كود الإيصال الإلكتروني<input name="itemCode" value="${esc(p.itemCode||p.gtin||p.barcode||'')}"></label>
+ <label>نوع الضريبة<input name="taxType" value="${esc(p.taxType||'')}" placeholder="مثال: T1 حسب إعداد الممول"></label>
+ <label>نسبة الضريبة %<input type="number" min="0" max="100" step="0.01" name="taxRate" value="${num(p.taxRate)||0}"></label>
+ <label>نوع الصرف<select name="rx"><option value="false" ${!p.rx?'selected':''}>OTC / بدون وصفة</option><option value="true" ${p.rx?'selected':''}>Rx / بوصفة</option></select></label>
+ <label>تصنيف الرقابة<select name="controlClass"><option value="normal" ${(p.controlClass||'normal')==='normal'?'selected':''}>عادي</option><option value="restricted" ${p.controlClass==='restricted'?'selected':''}>صرف مقيد</option><option value="controlled" ${p.controlClass==='controlled'?'selected':''}>خاضع لرقابة خاصة</option></select></label>
+ <label class="span-all">بدائل / أصناف مرتبطة<input name="alternatives" placeholder="افصل الأسماء بفاصلة" value="${esc(Array.isArray(p.alternatives)?p.alternatives.join(', '):(p.alternatives||''))}"></label>
+ </div></details>
+ </form>`}
+A.productForm=productForm;
+
+register('products',async()=>{
+ const ps=await all('products'),L=window.ElhafezListExplorer,view=L.create('products',{size:30,sort:'name'});
+ const productBatches=await all('batches'),productStock=new Map();for(const b of productBatches){if((A.state.settings?.branchId&&b.branchId&&b.branchId!==A.state.settings.branchId)||(b.status||'available')!=='available'||A.daysTo(b.expiry)<0)continue;productStock.set(b.productId,(productStock.get(b.productId)||0)+num(b.qtyBase))}
+ const categories=[...new Set(ps.map(p=>p.category).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar')),searchIndex=new Map(ps.map(p=>[p.id,L.blob(p,['name','barcode','gtin','active','company','location','category','strength'])]));
+ A.$('#content').innerHTML=`${pageHead('الأدوية والأصناف','بحث وفلترة سريعة لآلاف الأصناف بدون قوائم طويلة','<button id="addProduct" class="btn primary">+ صنف جديد</button>')}
+ <div class="card data-card"><div class="toolbar data-toolbar"><input id="pSearch" class="search" placeholder="اسم، باركود، GTIN، مادة فعالة أو شركة"><select id="pFilter" class="select-sm"><option value="">كل الحالات</option><option value="active">نشط</option><option value="inactive">موقوف</option></select><button id="pMoreFilters" class="btn filter-toggle" type="button">☰ فلاتر</button><select id="pSort" class="select-sm"><option value="name">الاسم</option><option value="stock_asc">الأقل مخزونًا</option><option value="stock_desc">الأعلى مخزونًا</option><option value="price_asc">السعر الأقل</option><option value="price_desc">السعر الأعلى</option></select></div>
+ <div id="pAdvanced" class="advanced-filters hidden"><select id="pCategory"><option value="">كل التصنيفات</option>${categories.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')}</select><select id="pStock"><option value="">كل المخزون</option><option value="available">متوفر</option><option value="low">تحت الحد الأدنى</option><option value="out">نافد</option></select><select id="pControl"><option value="">كل أنواع الصرف</option><option value="otc">OTC</option><option value="rx">Rx</option><option value="restricted">مقيد</option><option value="controlled">رقابة خاصة</option></select><button id="pClearFilters" class="btn" type="button">مسح الفلاتر</button></div>
+ <div id="pFilterMeta" class="filter-meta-row"></div><div id="pTable"></div></div>`;
+ let filtered=[];
+ const draw=()=>{const q=L.norm(A.$('#pSearch').value),status=A.$('#pFilter').value,category=A.$('#pCategory').value,stock=A.$('#pStock').value,control=A.$('#pControl').value,sort=A.$('#pSort').value;filtered=ps.filter(p=>{const st=productStock.get(p.id)||0,packs=st/Math.max(packSize(p),1),ctrl=p.controlClass==='controlled'?'controlled':p.controlClass==='restricted'?'restricted':p.rx?'rx':'otc';return(!q||searchIndex.get(p.id).includes(q))&&(!status||(p.status||'active')===status)&&(!category||p.category===category)&&(!control||ctrl===control)&&(!stock||(stock==='available'?st>0:stock==='out'?st<=0:packs<=num(p.minStock))) });filtered=L.sortBy(filtered,sort,{name:(a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ar'),stock_asc:(a,b)=>(productStock.get(a.id)||0)-(productStock.get(b.id)||0),stock_desc:(a,b)=>(productStock.get(b.id)||0)-(productStock.get(a.id)||0),price_asc:(a,b)=>num(a.sellPrice)-num(b.sellPrice),price_desc:(a,b)=>num(b.sellPrice)-num(a.sellPrice)});const page=L.slice(filtered,view);const lows=filtered.filter(p=>(productStock.get(p.id)||0)/Math.max(packSize(p),1)<=num(p.minStock)).length;A.$('#pFilterMeta').innerHTML=`<div class="filter-summary"><span>النتائج <b>${filtered.length}</b> من ${ps.length}</span><span class="filter-chip ${lows?'warn':''}">تحت الحد ${lows}</span>${L.activeFilters({status,category,stock,control,q})?'<span class="filter-chip active">فلترة مفعلة</span>':''}</div>`;const rows=page.items.map(p=>{const st=productStock.get(p.id)||0;return`<tr><td><b>${esc(p.name)}</b><small class="cell-sub">${esc(p.active||'')} ${p.strength?`• ${esc(p.strength)}`:''}</small></td><td>${esc(p.barcode||'-')}</td><td>${esc(p.company||'-')}</td><td>${esc(p.location||'-')}</td><td>${money(p.sellPrice)}</td><td>${stockValue(st/Math.max(packSize(p),1),p.minStock)}</td><td>${badge(p.controlClass==='controlled'?'رقابة خاصة':p.controlClass==='restricted'?'مقيد':p.rx?'Rx':'OTC',p.controlClass==='controlled'?'danger':p.controlClass==='restricted'||p.rx?'warn':'ok')}</td><td><div class="row-actions"><button class="btn tiny" data-price-history="${p.id}">الأسعار</button><button class="btn tiny" data-edit-product="${p.id}">تعديل</button></div></td></tr>`}).join('');A.$('#pTable').innerHTML=`<div class="table-wrap"><table class="table"><thead><tr><th>الصنف</th><th>الباركود</th><th>الشركة</th><th>المكان</th><th>السعر</th><th>المتاح/علبة</th><th>الصرف</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="8">${empty('لا توجد نتائج')}</td></tr>`}</tbody></table></div>${L.controls(view,filtered.length,'صنف')}`;L.bind(A.$('#pTable'),view,filtered.length,draw);A.$$('[data-edit-product]').forEach(b=>b.onclick=()=>openProduct(b.dataset.editProduct));A.$$('[data-price-history]').forEach(b=>b.onclick=async()=>{const p=await get('products',b.dataset.priceHistory),h=(await all('priceHistory')).filter(x=>x.productId===p.id).sort((a,b)=>new Date(b.at)-new Date(a.at));modal(`تاريخ سعر ${p.name}`,`<div class="list">${h.map(x=>`<div class="list-item"><div><b>${A.fmtDT(x.at)}</b><small>${esc(x.user||'')}</small></div><div><s>${money(x.oldPrice)}</s> ← <b>${money(x.newPrice)}</b></div></div>`).join('')||empty('لم يتم تسجيل تغييرات سعر بعد')}</div>`,`<button class="btn" data-close>إغلاق</button>`)})};
+ async function openProduct(pid){const p=pid?await get('products',pid):{};modal(pid?'تعديل الصنف':'إضافة صنف',productForm(p),`<button class="btn" data-close>إلغاء</button><button id="saveProduct" class="btn primary">حفظ</button>`);A.$('#saveProduct').onclick=()=>A.withButtonLock(A.$('#saveProduct'),async()=>{const f=A.$('#productForm');if(!f.reportValidity())return;const o=Object.fromEntries(new FormData(f));for(const k of ['buyPrice','sellPrice','packToStrip','stripToUnit','stripPrice','unitPrice','minStock','taxRate'])o[k]=num(o[k]);o.rx=o.rx==='true';o.alternatives=o.alternatives.split(',').map(x=>x.trim()).filter(Boolean);o.id=p.id||id('prd');o.createdAt=p.createdAt||new Date().toISOString();const oldSell=num(p.sellPrice);if(pid&&oldSell!==o.sellPrice&&A.state.user?.allowPriceEdit===false){toast('لا توجد صلاحية لتعديل سعر البيع','danger');return}await put('products',o);if(pid&&oldSell!==o.sellPrice)await put('priceHistory',{id:id('prc'),productId:o.id,at:new Date().toISOString(),oldPrice:oldSell,newPrice:o.sellPrice,user:A.state.user.name});await audit(pid?'تعديل صنف':'إضافة صنف',`${o.name} — ${o.sellPrice}`);closeModal();toast('تم حفظ الصنف');A.render()},'جاري الحفظ…')}
+ const resetDraw=()=>{L.reset(view);draw()},debounced=L.debounce(resetDraw,120);A.$('#addProduct').onclick=()=>openProduct();A.$('#pSearch').oninput=debounced;['#pFilter','#pCategory','#pStock','#pControl','#pSort'].forEach(sel=>A.$(sel).onchange=resetDraw);A.$('#pMoreFilters').onclick=()=>A.$('#pAdvanced').classList.toggle('hidden');A.$('#pClearFilters').onclick=()=>{A.$('#pSearch').value='';A.$('#pFilter').value='';A.$('#pCategory').value='';A.$('#pStock').value='';A.$('#pControl').value='';A.$('#pSort').value='name';resetDraw()};draw();
+});
+
+// Superseded suppliers page removed in v6 clean core.
+
+
+// Superseded customers page removed in v6 clean core.
+
+})();

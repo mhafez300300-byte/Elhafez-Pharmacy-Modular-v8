@@ -1,0 +1,29 @@
+{
+  "name": "elhafez-pharmacy-professional",
+  "version": "8.0.0",
+  "private": true,
+  "description": "Elhafez Pharmacy — TypeScript Modular Monolith commercial ERP/POS",
+  "main": "dist/app/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/app/server.js",
+    "dev": "npm run build && node dist/app/server.js",
+    "db:init": "node scripts/init-db.js",
+    "test": "npm run build && node --test tests/*.test.js",
+    "check": "npm run build && node scripts/check-modules.js",
+    "pilot": "node scripts/commercial-pilot.js",
+    "pilot:postgres": "node scripts/postgres-pilot.js",
+    "readiness": "node scripts/production-readiness.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "5.1.0",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}

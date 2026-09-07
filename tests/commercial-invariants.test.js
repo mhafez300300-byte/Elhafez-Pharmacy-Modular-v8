@@ -1,0 +1,23 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('fs'),path=require('path');
+const root=path.join(__dirname,'..'),read=p=>fs.readFileSync(path.join(root,p),'utf8');
+const runtime=read('src/app/composition-root.ts');
+const routeDir=path.join(root,'src/modules');
+const routes=fs.readdirSync(routeDir).sort().filter(n=>fs.existsSync(path.join(routeDir,n,'api','routes.ts'))).map(n=>read(`src/modules/${n}/api/routes.ts`)).join('\n');
+const serviceFiles=[];function walkServices(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walkServices(p);else if(e.name==='service.ts'||e.name==='common-service.ts')serviceFiles.push(p)}}walkServices(path.join(root,'src/modules'));serviceFiles.push(path.join(root,'src/core/runtime/common-service.ts'));const services=serviceFiles.sort().map(p=>fs.readFileSync(p,'utf8')).join('\n');
+const backend=runtime+'\n'+services+'\n'+routes;
+const kernel=services;
+const frontFiles=['public/core/app-shell.js','public/modules/catalog/products.js','public/modules/sales/pos-and-fulfillment.js','public/modules/admin/settings-and-audit.js','public/modules/operations/master-pages.js','public/modules/operations/daily-operations.js'];
+const frontend=frontFiles.map(read).join('\n');
+const bridge=read('public/core/storage/server-bridge.js'),pages=read('public/modules/remote/commercial-pages.js'),mig=read('db/migrations/011_atomic_idempotency.sql');
+
+test('financial atomic requests remain idempotent and replay-safe',()=>{assert.match(mig,/PRIMARY KEY \(tenant_id,idempotency_key\)/);assert.match(backend,/x-idempotency-key/);assert.match(backend,/pg_advisory_xact_lock/);assert.match(backend,/atomic_requests/);assert.match(bridge,/idempotencyKey:crypto\.randomUUID\(\)/)});
+test('sale allocation remains server FEFO under row locks',()=>{assert.match(kernel,/ORDER BY b\.product_id,b\.expiry NULLS LAST,r\.id FOR UPDATE OF r/);assert.match(kernel,/line\.allocations=\[\]/);assert.match(kernel,/const take=Math\.min\(need,available\)/);assert.match(kernel,/store:'stockMoves'/)});
+test('sale number stays server-side and UI waits for committed sale',()=>{assert.match(kernel,/sale\.no=await nextDocumentNumber\(c,tenantId,sale\.branchId,'sale'\)/);assert.match(frontend,/`PENDING-\$\{saleId\}`/);assert.doesNotMatch(frontend,/nextNumber\('sale'\)/);assert.match(frontend,/const committed=await window\.PharmaRemote\.atomic/);assert.match(frontend,/if\(!committed\?\.id\)throw new Error\('SALE_COMMIT_RESULT_MISSING'\)/);assert.match(frontend,/showReceipt\(committed\)/)});
+test('purchase cash preflight remains before atomic commit',()=>{assert.match(frontend,/ensureCashShift/);assert.match(frontend,/needsCash=.*invoiceType==='cash'/);assert.match(frontend,/جاري الاعتماد/);assert.match(frontend,/dataset\.busy/)});
+test('cash operations use authoritative server current shift',()=>{assert.match(frontend,/currentShift\(true\)/);assert.match(bridge,/currentShift:\(branchId='',cashboxId='cash_main'\)=>request\(`\/api\/cash\/current-shift/);assert.match(routes,/app\.get\('\/api\/cash\/current-shift'/)});
+test('reconciliation still detects critical integrity gaps',()=>{for(const marker of ['SALE_WITHOUT_STOCK','SALE_CASH_MISMATCH','SALE_WITHOUT_GL','SALE_WITHOUT_AUDIT','PURCHASE_WITHOUT_STOCK','PURCHASE_CASH_MISMATCH','PURCHASE_WITHOUT_GL','STOCK_LEDGER_MISMATCH','SHIFT_TOTAL_MISMATCH','RETURN_INCOMPLETE','DASHBOARD_REPORT_MISMATCH'])assert.match(backend,new RegExp(marker));assert.match(backend,/severityCounts/);assert.match(backend,/suggestedAction/)});
+test('safe reconciliation repair never invents financial movement',()=>{assert.match(routes,/app\.post\('\/api\/reconciliation\/repair'/);assert.match(backend,/integrityStatus:'quarantine'/);assert.match(backend,/ORPHAN_REPAIR_NOT_SAFE/)});
+test('POS quantity controls use one recalculation path',()=>{assert.match(frontend,/const setCartQty=\(i,q\)=>/);assert.match(frontend,/data-inc[\s\S]{0,600}setCartQty/);assert.match(frontend,/data-dec[\s\S]{0,600}setCartQty/);assert.match(frontend,/posRenderSeq/)});
+test('committed atomic sale is returned to UI bridge',()=>{assert.match(bridge,/if\(intent==='sale'\)\{const committed=\(resp\.results\|\|\[\]\)\.find\(x=>x\.store==='sales'&&x\.value\)\?\.value;if\(committed\)return committed\}/)});
+test('reconciliation has dedicated drill-down UI',()=>{assert.match(pages,/تفاصيل المطابقة المالية/);assert.match(pages,/data-rec-detail/);assert.match(pages,/الإجراء الآمن المقترح/);assert.match(pages,/reportReconciliationDetails/)});
