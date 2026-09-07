@@ -38,7 +38,7 @@ process.once('SIGTERM',()=>shutdown('SIGTERM'));process.once('SIGINT',()=>shutdo
 
 (async()=>{
  await services.initDb();
- httpServer=app.listen(PORT,()=>console.log(`Elhafez Pharmacy v${APP_VERSION} on :${PORT}`));
+ httpServer=app.listen(PORT,'0.0.0.0',()=>console.log(`Elhafez Pharmacy v${APP_VERSION} on 0.0.0.0:${PORT}`));
  setInterval(services.integrationWorker,15_000).unref();
  setInterval(services.catalogFeedSync,6*3600_000).unref();
  setTimeout(services.integrationWorker,3000);
