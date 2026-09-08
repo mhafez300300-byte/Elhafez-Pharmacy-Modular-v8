@@ -5,7 +5,7 @@ import type { BackupContract, BackupPayload, BackupTable } from '../contracts/ba
 const TABLE_ORDER = [
   'org_tenants','org_branches','id_users','attendance_sessions','sys_settings','platform_activation','audit_events','audit_heads',
   'cat_products','crm_customers','crm_suppliers',
-  'inv_batches','inv_movements','inv_return_holds','inv_transfers','inv_transfer_lines','inv_counts','inv_count_lines',
+  'inv_batches','inv_movements','inv_return_holds','inv_transfers','inv_transfer_lines','inv_counts','inv_count_lines','ops_shortages',
   'cash_shifts','cash_movements','acc_accounts','acc_periods','acc_journal_entries','acc_journal_lines',
   'draft_sales_carts','sales_counters','sales_invoices','sales_lines','sales_returns','sales_return_lines',
   'purchase_counters','purchase_order_counters','purchase_orders','purchase_order_lines','purchase_receipts','purchase_lines','purchase_returns','purchase_return_lines',
@@ -28,7 +28,7 @@ export class PostgresBackupRepository implements BackupContract {
       const rows=(await this.db.query<Record<string,unknown>>(`SELECT * FROM ${qi(name)}`)).rows;
       tables.push({name,rows});
     }
-    return {format:'ELHAFEZ_PHARMACY_DB_SNAPSHOT',version:1,appVersion:'8.1.0',createdAt:new Date().toISOString(),tables};
+    return {format:'ELHAFEZ_PHARMACY_DB_SNAPSHOT',version:1,appVersion:'8.2.0',createdAt:new Date().toISOString(),tables};
   }
 
   async restoreSnapshot(snapshot: BackupPayload, tx: DbTx): Promise<void> {

@@ -36,6 +36,7 @@ import { alertRoutes } from '../modules/alerts/api/routes.js';
 import { reconciliationRoutes } from '../modules/reconciliation/api/routes.js';
 import { salesDraftRoutes } from '../modules/salesdrafts/api/routes.js';
 import { dataImportRoutes } from '../modules/dataimport/api/routes.js';
+import { shortageRoutes } from '../modules/shortages/api/routes.js';
 import { createCompositionRoot } from './composition-root.js';
 import { migrations } from './migrations.js';
 
@@ -50,8 +51,8 @@ export function createApp(db: PostgresDatabase, config: AppConfig, suppliedRoot?
   app.use(authContext(config.appSecret));
   app.use(hydratePrincipal(root.identity));
 
-  app.get('/api/health', (_req:any,res:any) => res.json({ok:true,service:'elhafez-pharmacy',version:'8.1.0'}));
-  app.get('/api/ready',async(_req:any,res:any,next:any)=>{try{await db.query('SELECT 1');const applied=Number((await db.query<{count:number}>('SELECT count(*)::int count FROM app_migrations')).rows[0]?.count??0),expected=migrations.length;if(applied!==expected)return res.status(503).json({ok:false,database:'ready',migrations:{applied,expected},version:'8.1.0'});res.json({ok:true,database:'ready',migrations:{applied,expected},version:'8.1.0'});}catch(e){next(e);}});
+  app.get('/api/health', (_req:any,res:any) => res.json({ok:true,service:'elhafez-pharmacy',version:'8.2.0'}));
+  app.get('/api/ready',async(_req:any,res:any,next:any)=>{try{await db.query('SELECT 1');const applied=Number((await db.query<{count:number}>('SELECT count(*)::int count FROM app_migrations')).rows[0]?.count??0),expected=migrations.length;if(applied!==expected)return res.status(503).json({ok:false,database:'ready',migrations:{applied,expected},version:'8.2.0'});res.json({ok:true,database:'ready',migrations:{applied,expected},version:'8.2.0'});}catch(e){next(e);}});
   app.use('/api/setup', onboardingRoutes(root.setupService, db));
   app.use('/api/auth', identityRoutes(root.authService, root.identity));
   app.use('/api/organization', organizationRoutes(root.organization));
@@ -82,6 +83,7 @@ export function createApp(db: PostgresDatabase, config: AppConfig, suppliedRoot?
   app.use('/api/reconciliation', reconciliationRoutes(root.reconciliation));
   app.use('/api/sales-drafts', salesDraftRoutes(root.salesDraftService, root.salesDrafts));
   app.use('/api/imports', dataImportRoutes(root.dataImportService));
+  app.use('/api/shortages', shortageRoutes(root.shortageService, root.shortages));
 
   const publicDir=path.resolve(process.cwd(),'public');
   app.use(express.static(publicDir,{etag:true,maxAge:config.env==='production'?'1h':0}));

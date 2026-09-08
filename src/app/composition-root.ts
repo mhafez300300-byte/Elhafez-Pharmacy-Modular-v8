@@ -48,6 +48,8 @@ import { PostgresSalesDraftRepository } from '../modules/salesdrafts/infrastruct
 import { SalesDraftService } from '../modules/salesdrafts/application/sales-draft-service.js';
 import { DataImportService } from '../modules/dataimport/application/data-import-service.js';
 import { ChromiumPdfRenderer } from '../modules/documents/infrastructure/chromium-pdf-renderer.js';
+import { PostgresShortageRepository } from '../modules/shortages/infrastructure/postgres-shortages.js';
+import { ShortageService } from '../modules/shortages/application/shortage-service.js';
 
 export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
   const organization = new PostgresOrganizationRepository(db);
@@ -78,6 +80,7 @@ export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
   const salesDrafts = new PostgresSalesDraftRepository(db);
   const pdfRenderer = new ChromiumPdfRenderer();
   const platformStore = new PostgresPlatformRepository(db);
+  const shortages = new PostgresShortageRepository(db);
   const activation = new OwnerCenterActivationAdapter(config.ownerCenterUrl, config.ownerProductCode);
 
   return {
@@ -106,6 +109,7 @@ export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
     drugMaster,
     idempotency,
     salesDrafts,
+    shortages,
     authService: new AuthService(identity, config.appSecret, config.sessionHours),
     catalogService: new CatalogService(catalog, audit),
     salesService: new SalesService(db, sales, catalog, inventory, cash, accounting, customers, audit, settlements, identity, clinical, pricing, loyalty, idempotency),
@@ -122,6 +126,7 @@ export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
     documentService: new DocumentService(sales, purchases, catalog, customers, suppliers, settings, organization, pdfRenderer),
     salesDraftService: new SalesDraftService(db, salesDrafts, audit),
     dataImportService: new DataImportService(db, catalog, customers, suppliers, inventory, organization, audit),
+    shortageService: new ShortageService(db, shortages, audit),
     reconciliation,
     alertService: new OperationalAlertService(reports, notifications, cash, settlements, reconciliation),
     setupService: new SetupService(db, organization, identity, settings, audit, activation, platformStore, accounting, config.allowStandaloneSetup),

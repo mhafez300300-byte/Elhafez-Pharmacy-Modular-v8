@@ -9,7 +9,7 @@ import { seedReferenceDrugMaster } from '../modules/drugmaster/infrastructure/se
 const config=loadConfig(),db=new PostgresDatabase(config.databaseUrl);
 await runMigrations(db,migrations);
 const root=createCompositionRoot(db,config),app=createApp(db,config,root);
-const server=app.listen(config.port,config.host,()=>console.log(`Elhafez Pharmacy v8.1.0 clean on ${config.host}:${config.port}`));
+const server=app.listen(config.port,config.host,()=>console.log(`Elhafez Pharmacy v8.2.0 clean on ${config.host}:${config.port}`));
 if(config.drugMasterAutoSeed)void seedReferenceDrugMaster(db,config.drugMasterSeedFile).then(x=>console.log(`Drug master reference: ${x.seeded?'seeded':'ready'} ${x.count}`)).catch(e=>console.error('Drug master seed failed',e));
 
 async function refreshOperationalAlerts(){try{for(const x of await root.organization.listActiveTenantBranches())await root.alertService.refresh(x.tenantId,x.branchId);}catch(e){console.error('Operational alert worker failed',e);}}

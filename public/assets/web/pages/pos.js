@@ -33,8 +33,22 @@ export async function posPage() {
         line.quantity++;
     else
         cart.push({ product: p, quantity: 1 }); renderCart(); };
-    function renderProducts() { grid.replaceChildren(...products.slice(0, 60).map(p => h('button', { class: `product-tile ${Number(p.stock ?? 0) <= 0 ? 'out' : ''}`, disabled: Number(p.stock ?? 0) <= 0, onClick: () => add(p) }, h('b', {}, p.name), h('small', {}, p.barcode ?? 'بدون باركود'), h('span', { class: 'stock-hint' }, `الرصيد ${Number(p.stock ?? 0).toLocaleString('ar-EG')}${p.nearestExpiry ? ' • صلاحية ' + new Date(p.nearestExpiry).toLocaleDateString('ar-EG') : ''}`), h('div', { class: 'tile-meta' }, h('strong', {}, money(p.sellingPrice)), p.requiresPrescription ? h('span', { class: 'tag warning' }, 'Rx') : null)))); if (!products.length)
-        grid.replaceChildren(h('div', { class: 'empty' }, 'لا توجد نتائج')); }
+    function renderProducts() { grid.replaceChildren(...products.slice(0, 60).map(p => h('button', { class: `product-tile ${Number(p.stock ?? 0) <= 0 ? 'out' : ''}`, disabled: Number(p.stock ?? 0) <= 0, onClick: () => add(p) }, h('b', {}, p.name), h('small', {}, p.barcode ?? 'بدون باركود'), h('span', { class: 'stock-hint' }, `الرصيد ${Number(p.stock ?? 0).toLocaleString('ar-EG')}${p.nearestExpiry ? ' • صلاحية ' + new Date(p.nearestExpiry).toLocaleDateString('ar-EG') : ''}`), h('div', { class: 'tile-meta' }, h('strong', {}, money(p.sellingPrice)), p.requiresPrescription ? h('span', { class: 'tag warning' }, 'Rx') : null)))); if (!products.length) {
+        const emptyBox = h('div', { class: 'empty' }, h('div', {}, 'لا توجد نتائج'));
+        if (posPrefs.shortageNotebookEnabled !== false && posPrefs.autoCreateShortageFromPos !== false && search.value.trim()) {
+            const save = h('button', { class: 'btn primary sm', type: 'button', style: 'margin-top:10px' }, 'تسجيله في كشكول النواقص');
+            save.onclick = async () => { try {
+                const c = customers.find(x => x.id === customer.value);
+                await post('/api/shortages', { branchId: state.branch?.id, freeText: search.value.trim(), quantity: 1, customerId: c?.id ?? null, customerName: c?.name ?? null, customerPhone: c?.phone ?? null, reason: 'غير موجود أثناء البيع', note: 'تم تسجيل الطلب من نقطة البيع', source: 'pos_not_found' });
+                toast('تم تسجيل الطلب في كشكول النواقص');
+            }
+            catch (e) {
+                toast(e.message ?? 'تعذر تسجيل النقص', true);
+            } };
+            emptyBox.append(save);
+        }
+        grid.replaceChildren(emptyBox);
+    } }
     async function searchServer(q) { try {
         const [r, b] = await Promise.all([api(`/api/products?q=${encodeURIComponent(q)}&limit=60`), api(`/api/inventory/balances?branchId=${encodeURIComponent(state.branch?.id ?? '')}`).catch(() => ({ items: [] }))]);
         const bm = new Map((b.items ?? []).map((x) => [x.productId, x]));

@@ -1,0 +1,23 @@
+import { api, post } from '../api/client.js';
+import { h, modal, toast } from '../components/dom.js';
+import { state } from '../state/store.js';
+export async function shortagesPage() { const root = h('div'), head = h('div', { class: 'section-head' }, h('div', {}, h('h2', {}, 'كشكول النواقص'), h('p', {}, 'طلبات العملاء والأصناف غير المتوفرة — من البيع إلى الشراء')), h('div', { class: 'section-actions' }, h('button', { class: 'btn primary', 'data-a': 'add' }, '+ إضافة نقص'))), summary = h('div', { class: 'grid kpis' }), card = h('section', { class: 'card' }); root.append(head, summary, card); async function load() { const [rows, products, customers] = await Promise.all([api(`/api/shortages?branchId=${encodeURIComponent(state.branch?.id ?? '')}`), api('/api/products?limit=500'), api('/api/customers')]), items = rows.items ?? [], names = new Map(products.items.map((x) => [x.id, x.name])); summary.replaceChildren(kpi('مفتوح', items.filter((x) => x.status === 'open').length), kpi('تم طلبه', items.filter((x) => x.status === 'ordered').length), kpi('تم توفيره', items.filter((x) => x.status === 'fulfilled').length), kpi('طلبات مرتبطة بعملاء', items.filter((x) => x.customerId || x.customerName || x.customerPhone).length)); card.replaceChildren(h('div', { class: 'card-title' }, h('h3', {}, 'طلبات النواقص')), render(items, names, load)); head.querySelector('[data-a="add"]').onclick = () => openForm(products.items, customers.items, load); } await load(); return root; }
+function kpi(l, v) { return h('div', { class: 'card kpi' }, h('small', {}, l), h('strong', {}, String(v))); }
+function render(items, names, done) { if (!items.length)
+    return h('div', { class: 'empty' }, 'لا توجد نواقص مسجلة.'); const wrap = h('div', { class: 'table-wrap' }, h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...['الصنف', 'الكمية', 'العميل', 'السبب', 'الحالة', 'التاريخ', ''].map(x => h('th', {}, x)))), h('tbody'))); for (const x of items) {
+    const actions = h('div', { class: 'section-actions' });
+    if (x.status === 'open')
+        actions.append(action('تم طلبه', 'ordered', x.id, done));
+    if (['open', 'ordered'].includes(x.status))
+        actions.append(action('تم توفيره', 'fulfilled', x.id, done));
+    if (!['fulfilled', 'cancelled'].includes(x.status))
+        actions.append(action('إلغاء', 'cancelled', x.id, done));
+    (wrap.querySelector('tbody')).append(h('tr', {}, h('td', {}, h('b', {}, x.productId ? names.get(x.productId) ?? x.productId : x.freeText ?? '—'), h('small', { class: 'cell-sub' }, x.source === 'pos_not_found' ? 'من نقطة البيع' : 'يدوي')), h('td', {}, String(x.quantity)), h('td', {}, x.customerName || x.customerPhone || '—'), h('td', {}, x.reason || x.note || '—'), h('td', {}, status(x.status)), h('td', {}, new Date(x.createdAt).toLocaleString('ar-EG')), h('td', {}, actions)));
+} return wrap; }
+function action(label, statusValue, id, done) { return h('button', { class: 'btn sm', onClick: async () => { await post(`/api/shortages/${id}/status`, { status: statusValue }); toast('تم تحديث كشكول النواقص'); await done(); } }, label); }
+function status(s) { return s === 'open' ? 'مفتوح' : s === 'ordered' ? 'تم طلبه' : s === 'fulfilled' ? 'تم توفيره' : 'ملغي'; }
+function openForm(products, customers, done) { const product = sel('productId', [['', 'اسم حر / غير موجود بالكتالوج'], ...products.map((x) => [x.id, x.name])]), customer = sel('customerId', [['', 'بدون عميل'], ...customers.map((x) => [x.id, x.name])]), body = h('div', { class: 'form-grid' }, lab('الصنف', product), inp('freeText', 'اسم المنتج إذا غير موجود'), inp('quantity', 'الكمية المطلوبة', 'number', '1'), lab('العميل', customer), inp('customerPhone', 'هاتف العميل'), inp('reason', 'السبب'), inp('note', 'ملاحظة')); modal('إضافة إلى كشكول النواقص', body, async (f) => { const d = new FormData(f), c = customers.find((x) => x.id === d.get('customerId')); await post('/api/shortages', { branchId: state.branch?.id, productId: d.get('productId') || null, freeText: d.get('freeText') || null, quantity: Number(d.get('quantity') || 1), customerId: d.get('customerId') || null, customerName: c?.name ?? null, customerPhone: d.get('customerPhone') || c?.phone || null, reason: d.get('reason') || null, note: d.get('note') || null, source: 'manual' }); toast('تم تسجيل النقص'); await done(); }); }
+function inp(n, t, type = 'text', value = '') { return lab(t, h('input', { name: n, type, value, required: n === 'quantity', min: type === 'number' ? '0.01' : undefined, step: type === 'number' ? '0.01' : undefined })); }
+function lab(t, e) { return h('label', { class: 'field' }, h('span', {}, t), e); }
+function sel(n, ops) { const s = h('select', { name: n }); for (const [o, l] of ops)
+    s.append(h('option', { value: o }, l)); return s; }
