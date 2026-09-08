@@ -1,0 +1,3 @@
+import type{DbTx}from'../../../core/db/types.js';
+export type AttendanceSession=Readonly<{id:string;tenantId:string;userId:string;branchId:string;checkIn:string;checkOut:string|null;note:string|null}>;
+export interface AttendanceContract{getOpen(tenantId:string,userId:string,tx?:DbTx):Promise<AttendanceSession|null>;checkIn(input:{id:string;tenantId:string;userId:string;branchId:string;note?:string|null},tx?:DbTx):Promise<AttendanceSession>;checkOut(tenantId:string,userId:string,note?:string|null,tx?:DbTx):Promise<AttendanceSession>;history(tenantId:string,userId?:string,limit?:number):Promise<AttendanceSession[]>;}

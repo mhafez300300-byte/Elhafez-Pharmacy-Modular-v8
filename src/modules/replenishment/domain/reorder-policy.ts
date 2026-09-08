@@ -1,0 +1,41 @@
+export type ReorderInput = Readonly<{
+  currentStock: number;
+  reorderLevel: number;
+  net7: number;
+  net30: number;
+  targetDays: number;
+}>;
+
+export type ReorderDecision = Readonly<{
+  avgDaily7: number;
+  avgDaily30: number;
+  dailyDemand: number;
+  coverageDays: number | null;
+  targetStock: number;
+  suggestedQuantity: number;
+  priority: 'critical' | 'high' | 'medium' | 'none';
+}>;
+
+export function calculateReorder(input: ReorderInput): ReorderDecision {
+  const current = Math.max(0, Number(input.currentStock) || 0);
+  const reorder = Math.max(0, Number(input.reorderLevel) || 0);
+  const net7 = Math.max(0, Number(input.net7) || 0);
+  const net30 = Math.max(0, Number(input.net30) || 0);
+  const targetDays = Math.min(90, Math.max(7, Number(input.targetDays) || 21));
+  const avgDaily7 = net7 / 7;
+  const avgDaily30 = net30 / 30;
+  const dailyDemand = avgDaily7 > 0 && avgDaily30 > 0
+    ? (avgDaily7 * 0.65) + (avgDaily30 * 0.35)
+    : Math.max(avgDaily7, avgDaily30);
+  const coverageDays = dailyDemand > 0 ? current / dailyDemand : null;
+  const targetStock = Math.ceil((dailyDemand * targetDays) + reorder);
+  const suggestedQuantity = Math.max(0, targetStock - current);
+  const priority: ReorderDecision['priority'] = current <= 0 && dailyDemand > 0
+    ? 'critical'
+    : (coverageDays !== null && coverageDays <= 7) || current <= reorder
+      ? 'high'
+      : suggestedQuantity > 0
+        ? 'medium'
+        : 'none';
+  return { avgDaily7, avgDaily30, dailyDemand, coverageDays, targetStock, suggestedQuantity, priority };
+}

@@ -1,0 +1,1 @@
+import type{Migration}from'../../../core/db/migrator.js';export const settingsMigrations:readonly Migration[]=[{id:'007_settings',sql:`CREATE TABLE sys_settings(tenant_id text PRIMARY KEY REFERENCES org_tenants(id) ON DELETE CASCADE,pharmacy_name text NOT NULL,phone text NULL,address text NULL,invoice_footer text NULL,updated_at timestamptz NOT NULL DEFAULT now());`}];

@@ -1,25 +1,36 @@
-# Module Map and Responsibility Boundaries
+# Module Map
 
-This file is the operational index for finding where a future change belongs.
+| Module | Owns | Public responsibilities |
+|---|---|---|
+| organization | `org_*` | tenant and branch identity |
+| identity | `id_users`, `id_sessions`, `id_login_attempts` | users, login, RBAC, revocable sessions and login protection |
+| onboarding | no tables | first-time setup orchestration |
+| platform | `platform_*` | Owner Center activation port/adapter |
+| idempotency | `idem_*` | replay protection for atomic commands |
+| catalog | `cat_*` | products, barcode, prices, tax and Rx flags |
+| drugmaster | `drug_master` | central medicine reference catalog |
+| customers | `crm_customers` | customer master data and credit limit |
+| suppliers | `crm_suppliers` | supplier master data |
+| inventory | `inv_*` | FEFO, batches, expiry, counts, transfers and return holds |
+| cash | `cash_*` | shifts, cash movement and reconciliation |
+| accounting | `acc_*` | double-entry journal, chart, statements and periods |
+| sales | `sales_*` | invoices, returns and demand summary contract |
+| purchases | `purchase_*` | purchase orders, receipts and supplier returns |
+| settlements | `fin_*` | AR/AP obligations, allocation, collection and payment |
+| expenses | `exp_*` | operating expenses |
+| clinical | `ph_*` | doctors, prescriptions, recalls and interaction rules |
+| pricing | `pr_*` | offers and controlled price updates |
+| loyalty | `loy_*` | earning/redemption rules, points accounts and immutable ledger |
+| attendance | `attendance_*` | employee self check-in/out and history |
+| notifications | `notifications` | deduplicated operational alerts and user read state |
+| audit | `audit_*` | audit events, chain head and tamper verification |
+| settings | `sys_*` | pharmacy presentation/settings data |
+| backup | no tables | encrypted whole-instance backup/restore infrastructure |
+| replenishment | no tables | reorder intelligence via Catalog/Inventory/Sales contracts |
+| party360 | no tables | Customer 360 / Supplier 360 using domain contracts only |
+| documents | no tables | printable/exportable document projections via contracts |
+| alerts | no tables | operational alert orchestration via reports/cash/settlements/reconciliation contracts |
+| reconciliation | no tables | cross-domain commercial integrity checks through contracts only |
+| reports | no tables | deliberate read-only cross-domain reporting projections |
 
-- **identity**: authentication, sessions, users/roles, permissions, credential security.
-- **organization**: tenant context, branches, settings, cashboxes.
-- **catalog**: product master, catalog import/search, offers and price metadata.
-- **inventory**: stock availability, batches, FEFO, provenance, transfers/counts/tracking.
-- **customers**: customer master and customer receivable/payment data.
-- **suppliers**: supplier master and supplier payable/payment data.
-- **sales**: POS, sale documents, returns, held sales and order fulfillment.
-- **purchases**: purchase receiving, purchase orders and supplier returns.
-- **cash**: shifts, cash movements and expenses.
-- **accounting**: journals, accounts, periods, statements and accounting controls.
-- **clinical**: clinical checks, drug catalog clinical rules, prescriptions/doctors.
-- **contracts**: contracts/insurance and claims.
-- **loyalty**: points and rewards.
-- **reporting**: cross-module read models; never authoritative writes into other modules.
-- **reconciliation**: integrity inspection and safe deterministic repair orchestration.
-- **transactions**: atomic multi-module commands and idempotency.
-- **integrations**: external integration status/outbox/events.
-- **backup**: backups, restore and printable server document generation.
-- **platform**: licensing, app update and diagnostics/background platform workers.
-- **system**: health/bootstrap/branding endpoints.
-- **compatibility-data**: backward-compatible generic API facade governed by store ownership.
+Cross-module implementation imports are forbidden. Application flows can import only another module's `contracts/`. Composition happens in `src/app/composition-root.ts` and is enforced by `scripts/check-architecture.mjs`.

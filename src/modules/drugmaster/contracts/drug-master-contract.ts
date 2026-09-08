@@ -1,0 +1,3 @@
+import type{DbTx}from'../../../core/db/types.js';
+export type DrugMasterView=Readonly<{id:string;gtin:string|null;barcode:string|null;nameAr:string;nameEn:string|null;activeIngredients:readonly string[];strength:string|null;dosageForm:string|null;manufacturer:string|null;requiresPrescription:boolean;controlledClass:string|null;officialPrice:number|null;source:string;sourceUpdatedAt:string|null;updatedAt:string}>;
+export interface DrugMasterContract{upsert(input:Omit<DrugMasterView,'updatedAt'>,tx?:DbTx):Promise<DrugMasterView>;get(id:string,tx?:DbTx):Promise<DrugMasterView|null>;search(query:string,limit?:number):Promise<DrugMasterView[]>;count():Promise<number>;}

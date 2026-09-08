@@ -1,0 +1,4 @@
+import { createHash } from 'node:crypto';
+function stable(value:unknown):unknown{if(Array.isArray(value))return value.map(stable);if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value as Record<string,unknown>).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,stable(v)]));return value;}
+export type AuditHashInput=Readonly<{tenantId:string;userId?:string|null;action:string;entity:string;entityId?:string|null;detail?:unknown;createdAt:string;prevHash?:string|null}>;
+export function auditEventHash(input:AuditHashInput):string{return createHash('sha256').update(JSON.stringify(stable({tenantId:input.tenantId,userId:input.userId??null,action:input.action,entity:input.entity,entityId:input.entityId??null,detail:input.detail??{},createdAt:input.createdAt,prevHash:input.prevHash??null}))).digest('hex');}

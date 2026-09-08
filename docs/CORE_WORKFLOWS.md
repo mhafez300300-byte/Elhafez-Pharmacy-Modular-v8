@@ -1,22 +1,28 @@
-# Core Business Workflows
+# Core Workflows
 
-## Sale
-Auth/Permission → server pricing/discount validation → FEFO row locks → stock + sale + payment/cash + journal bundle → invariant validation → atomic commit → committed document returned to UI.
+## Cash sale
+1. Validate request.
+2. Resolve products through Catalog contract.
+3. Allocate FEFO through Inventory contract with row locks.
+4. Require an open cash shift.
+5. Save Sales invoice and lines.
+6. Record Cash movement.
+7. Post balanced Accounting journal.
+8. Write Audit event.
+9. Commit once; otherwise rollback everything.
 
-## Sale Return
-Validate original sale/remaining returnable quantity → inspection/disposition → inventory/provenance restoration or quarantine/waste → customer/insurance/loyalty adjustments → refund/cash + reversing journal → atomic commit.
+## Purchase receipt
+1. Validate supplier and products.
+2. Create receipt document.
+3. Create inventory batches and receipt movements.
+4. If cash, require open shift and record outflow.
+5. Post Inventory/AP-or-Cash journal.
+6. Audit and commit.
 
-## Purchase
-Supplier/invoice uniqueness lock → server totals/tax validation → cash/shift preflight when needed → receive batches and provenance → supplier balance + stock movement + journal → atomic commit.
-
-## Supplier Return
-Validate supplier receipt provenance → reduce stock → apply supplier credit/payable reduction → update provenance → journal → atomic commit.
-
-## Shift / Expense
-Cash module owns shift lifecycle and expense financial bundles. The server resolves/validates the authoritative open shift; UI-provided shift state is not trusted for posting.
-
-## Clinical Safety
-Clinical module owns interaction/allergy checks. Sales consumes the capability through an injected contract; the clinical implementation is not imported by Sales.
-
-## Reconciliation
-Cross-module read-only integrity inspection. Safe repair may rebuild deterministic projections/metadata only; it never invents cash movements, stock movements, or accounting entries.
+## Sale return
+1. Load original posted sale.
+2. Validate return quantity.
+3. Return stock to original batch only when classified sellable; otherwise isolate in return holds.
+4. Record refund/credit adjustment.
+5. Post reversing journal and audit.
+6. Commit once.

@@ -3,132 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#075867">
-  <meta name="description" content="Elhafez Pharmacy — Commercial Professional ERP لإدارة الصيدليات">
-  <title>Elhafez Pharmacy — v7.1.0</title>
-  <link rel="icon" type="image/png" href="/icons/favicon-64.png">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="stylesheet" href="/styles/app.css?v=7.1.0">
-  <link rel="stylesheet" href="/styles/auth-layout.css?v=8.0.1">
+  <meta name="theme-color" content="#073b46">
+  <meta name="description" content="Elhafez Pharmacy v8 — نظام إدارة الصيدليات">
+  <title>Elhafez Pharmacy v8</title>
+  <link rel="stylesheet" href="/assets/app.css">
 </head>
-<body data-session="boot">
-  <div id="setupOverlay" class="overlay auth-overlay hidden" aria-hidden="true">
-    <form id="setupForm" class="setup-card auth-card identity-panel">
-      <section class="auth-brand-stage pharmacy-stage" aria-label="هوية Elhafez Pharmacy">
-        <div class="auth-brand-badge">ELHAFEZ TECHNOLOGY</div>
-        <img src="/assets/brand/elhafez-pharmacy.png" class="auth-product-logo" alt="Elhafez Pharmacy">
-        <h1>Elhafez <span>Pharmacy</span></h1>
-        <p>Commercial Professional ERP</p>
-        <div class="auth-specialty"><b>نظام إدارة الصيدليات</b><span>بيع • مخزون • تشغيلات • صلاحية • سلامة دوائية</span></div>
-        <div class="auth-visual pharmacy-visual" aria-hidden="true"><span>✚</span><span>Rx</span><span>◉</span><span>▤</span></div>
-      </section>
-      <section class="auth-form-stage setup-form-stage">
-        <div class="auth-form-head"><span class="brand-eyebrow">تهيئة أول مرة</span><h2>إعداد الفرع</h2><p>تم إنشاء الشركة والاشتراك من مركز المالك. أكمل بيانات الفرع والتشغيل فقط.</p></div>
-      <div id="ownerCompanyCard" class="owner-company-card"><small>الشركة المسجلة في Elhafez Owner</small><strong id="ownerCompanyName">جارٍ التحقق…</strong><span id="ownerCompanyCode"></span></div>
-      <div class="form-grid two setup-core">
-        <input type="hidden" name="pharmacyName" id="setupPharmacyName"><label>اسم الفرع<input name="branchName" required value="الفرع الرئيسي" autocomplete="organization-title"></label>
-        <label>العملة<select name="currency"><option>EGP</option><option>SAR</option><option>USD</option></select></label>
-        <label>اسم مستخدم المدير<input name="adminName" value="المدير" autocomplete="name"></label>
-        <label class="required-field">PIN المدير <span class="required-mark">مطلوب</span><input name="adminPin" inputmode="numeric" minlength="4" maxlength="8" pattern="[0-9]{4,8}" required placeholder="4 إلى 8 أرقام"><small class="field-error" data-error-for="adminPin"></small></label>
-      </div>
-      <details class="setup-more">
-        <summary>بيانات إضافية <span>اختيارية</span></summary>
-        <div class="form-grid two setup-extra">
-          <label>اسم المالك / المدير<input name="ownerName" autocomplete="name" placeholder="اختياري"></label>
-          <label>رقم الهاتف<input name="phone" inputmode="tel" autocomplete="tel" placeholder="اختياري"></label>
-          <label class="span-all">العنوان<input name="address" autocomplete="street-address" placeholder="اختياري"></label>
-          <label>الرقم الضريبي<input name="taxNumber" inputmode="numeric" placeholder="اختياري"></label>
-          <label>السجل التجاري<input name="commercialRegister" inputmode="numeric" placeholder="اختياري"></label>
-          <label>كود تهيئة الخادم<input name="setupKey" autocomplete="off" placeholder="يُطلب فقط إذا فعّله مدير الخادم"></label>
-        </div>
-      </details>
-      <label class="check-row setup-demo"><input type="checkbox" name="seedDemo"> إضافة بيانات تجريبية بسيطة</label>
-      <button class="btn primary wide setup-submit" type="submit">تجهيز الفرع وبدء الاستخدام</button>
-      </section>
-    </form>
-  </div>
-
-  <div id="sidebarShade" class="sidebar-shade"></div>
-  <aside id="sidebar" class="sidebar" aria-label="التنقل الرئيسي">
-    <div class="sidebar-brand">
-      <img src="/assets/brand/elhafez-pharmacy.png" class="product-logo" alt="Elhafez Pharmacy">
-      <div class="brand-copy"><strong>Elhafez</strong><b>Technology</b><small id="brandBranch">PHARMACY ERP</small></div>
-    </div>
-    <nav id="mainNav" class="nav-groups"></nav>
-    <div class="sidebar-foot"><span class="status-dot"></span><div><b id="brandName">Elhafez Pharmacy</b><small id="storageStatus">v7.1.0</small></div></div>
-  </aside>
-
-  <main class="app-shell">
-    <header class="topbar">
-      <div class="header-primary">
-        <button id="menuBtn" class="icon-btn menu-btn" aria-label="فتح القائمة">☰</button>
-        <div class="topbar-title"><span class="brand-eyebrow">ELHAFEZ PHARMACY</span><strong id="pageTitle">الرئيسية</strong><small id="pageSubtitle">نظرة سريعة على الصيدلية</small></div>
-      </div>
-      <div class="top-actions">
-        <span id="activeShiftChip" class="shift-chip">لا توجد وردية</span>
-        <button id="backBtn" class="icon-btn" title="رجوع" aria-label="رجوع">←</button>
-        <button id="refreshBtn" class="icon-btn" title="تحديث" aria-label="تحديث">↻</button>
-        <button id="globalSearchBtn" class="icon-btn" title="بحث موحد" aria-label="بحث موحد">⌕</button>
-        <button id="alertsBtn" class="icon-btn badge-wrap" title="التنبيهات" aria-label="التنبيهات">♢<span id="alertBadge" class="badge">0</span></button>
-        <button id="lockBtn" class="icon-btn" title="قفل النظام" aria-label="قفل النظام">⌾</button>
-        <button id="quickCenterBtn" class="icon-btn quick-center-btn" title="إجراءات سريعة (Ctrl+K)" aria-label="إجراءات سريعة"><span>⌘</span></button>
-        <button id="quickSaleBtn" class="btn primary compact">+ بيع جديد</button>
-      </div>
-    </header>
-    <div id="pullRefreshIndicator" class="pull-refresh-indicator">اسحب للتحديث</div>
-    <section id="content" class="content"></section>
-  </main>
-
-  <div id="loginOverlay" class="overlay login-overlay auth-overlay hidden" aria-hidden="true">
-    <div class="login-card auth-card identity-panel">
-      <section class="auth-brand-stage pharmacy-stage" aria-label="Elhafez Pharmacy">
-        <div class="auth-brand-badge">ELHAFEZ TECHNOLOGY</div>
-        <img src="/assets/brand/elhafez-pharmacy.png" class="auth-product-logo" alt="Elhafez Pharmacy">
-        <h1>Elhafez <span>Pharmacy</span></h1>
-        <p>Commercial Professional ERP</p>
-        <div class="auth-specialty"><b>إدارة صيدليتك من مكان واحد</b><span>نقطة بيع سريعة • مخزون دقيق • متابعة تشغيلات وصلاحية</span></div>
-        <div class="auth-visual pharmacy-visual" aria-hidden="true"><span>✚</span><span>Rx</span><span>◉</span><span>▤</span></div>
-      </section>
-      <section class="auth-form-stage">
-        <div class="auth-form-head"><span class="brand-eyebrow">تسجيل الدخول</span><h2 id="loginPharmacy">Elhafez Pharmacy</h2><p>أدخل حسابك للمتابعة إلى نظام الصيدلية.</p></div>
-      <form id="loginForm" class="form-grid auth-login-form">
-        <label>المستخدم<select id="loginUser" name="userId" autocomplete="username"></select></label>
-        <label>PIN / كلمة المرور<input id="loginPin" name="pin" maxlength="64" autocomplete="current-password" placeholder="أدخل PIN أو كلمة المرور"></label>
-        <label id="totpLabel">رمز التحقق 2FA <span class="muted">(إن كان مفعّلًا)</span><input id="loginTotp" name="totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"></label>
-        <button class="btn primary wide" type="submit">دخول آمن</button>
-      </form>
-      <small class="login-note">Elhafez Technology — Software &amp; AI Solutions</small>
-      </section>
-    </div>
-  </div>
-
-  <div id="toast" class="toast"></div>
-  <div id="modalRoot"></div>
-
-  <script>
-    window.ElhafezSession=window.ElhafezSession||{};
-    window.ElhafezSession.set=window.ElhafezSession.set||function(mode){
-      if(document.body) document.body.dataset.session=mode||'app';
-      try{requestAnimationFrame(function(){window.PharmaApp?.syncAndroidInteractionState?.();});}catch(_){}
-      return mode||'app';
-    };
-    window.setSessionMode=window.setSessionMode||function(mode){return window.ElhafezSession.set(mode);};
-  </script>
-  <script src="/core/finance/shared-finance.js?v=7.1.0"></script>
-  <script src="/core/storage/pharma-db.js?v=7.1.0"></script>
-  <script src="/core/storage/server-bridge.js?v=7.1.0"></script>
-  <script src="/core/ui/list-explorer.js?v=7.1.0"></script>
-  <script src="/core/app-shell.js?v=7.1.0"></script>
-  <script src="/modules/catalog/products.js?v=7.1.0"></script>
-  <script src="/modules/sales/pos-and-fulfillment.js?v=7.1.0"></script>
-  <script src="/modules/admin/settings-and-audit.js?v=7.1.0"></script>
-  <script src="/modules/operations/master-pages.js?v=7.1.0"></script>
-  <script src="/modules/operations/daily-operations.js?v=7.1.0"></script>
-  <script src="/modules/integrations/commercial-features.js?v=7.1.0"></script>
-  <script src="/modules/sales/sales-intelligence.js?v=7.1.0"></script>
-  <script src="/assets/vendor/fflate.min.js?v=0.8.2"></script>
-  <script src="/modules/admin/operations-control.js?v=7.1.0"></script>
-  <script src="/modules/remote/commercial-pages.js?v=7.1.0"></script>
-  <script src="/core/boot.js?v=7.1.0"></script>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/assets/web/main.js"></script>
 </body>
 </html>

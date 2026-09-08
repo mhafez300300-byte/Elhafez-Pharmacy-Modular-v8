@@ -1,0 +1,1 @@
+import type{DbTx}from'../../../core/db/types.js';export type SupplierView=Readonly<{id:string;tenantId:string;name:string;phone:string|null;active:boolean}>;export interface SupplierContract{create(input:SupplierView,tx?:DbTx):Promise<SupplierView>;get(tenantId:string,id:string,tx?:DbTx):Promise<SupplierView|null>;list(tenantId:string,q?:string):Promise<SupplierView[]>;}

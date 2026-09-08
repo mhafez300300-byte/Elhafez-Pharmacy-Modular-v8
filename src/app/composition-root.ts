@@ -1,89 +1,120 @@
-'use strict';
-const fs=require('fs');
-const path=require('path');
-const crypto=require('crypto');
-const os=require('os');
-const {execFile}=require('child_process');
-const {promisify}=require('util');
-const execFileAsync=promisify(execFile);
-const Finance=require('../core/money/finance');
-const storePolicy=require('../contracts/store-policy');
-const storeOwnership=require('../contracts/store-ownership');
-const validation=require('../modules/transactions/domain/commercial-invariants');
-const securityPolicy=require('../modules/identity/domain/security-policy');
-const {runMigrations}=require('../core/database/migrations');
-const projections=require('../modules/compatibility-data/infrastructure/projections');
-const createCommonService=require('../core/runtime/common-service');
-const {pickDependencies}=require('../core/runtime/pick-dependencies');
-const {dependencyManifest}=require('./dependency-manifest');
-const {InMemoryEventBus}=require('../core/events/in-memory-event-bus');
+import type { AppConfig } from '../core/config/env.js';
+import type { PostgresDatabase } from '../core/db/postgres.js';
+import { PostgresOrganizationRepository } from '../modules/organization/infrastructure/postgres-organization.js';
+import { PostgresIdentityRepository } from '../modules/identity/infrastructure/postgres-identity.js';
+import { AuthService } from '../modules/identity/application/auth-service.js';
+import { PostgresAuditRepository } from '../modules/audit/infrastructure/postgres-audit.js';
+import { PostgresCatalogRepository } from '../modules/catalog/infrastructure/postgres-catalog.js';
+import { CatalogService } from '../modules/catalog/application/catalog-service.js';
+import { PostgresCustomerRepository } from '../modules/customers/infrastructure/postgres-customers.js';
+import { PostgresSupplierRepository } from '../modules/suppliers/infrastructure/postgres-suppliers.js';
+import { PostgresSettingsRepository } from '../modules/settings/infrastructure/postgres-settings.js';
+import { PostgresInventoryRepository } from '../modules/inventory/infrastructure/postgres-inventory.js';
+import { InventoryService } from '../modules/inventory/application/inventory-service.js';
+import { PostgresCashRepository } from '../modules/cash/infrastructure/postgres-cash.js';
+import { PostgresAccountingRepository } from '../modules/accounting/infrastructure/postgres-accounting.js';
+import { PostgresSalesRepository } from '../modules/sales/infrastructure/postgres-sales.js';
+import { SalesService } from '../modules/sales/application/sales-service.js';
+import { PostgresPurchaseRepository } from '../modules/purchases/infrastructure/postgres-purchases.js';
+import { PurchaseService } from '../modules/purchases/application/purchase-service.js';
+import { PostgresReportRepository } from '../modules/reports/infrastructure/postgres-reports.js';
+import { PostgresNotificationRepository } from '../modules/notifications/infrastructure/postgres-notifications.js';
+import { OwnerCenterActivationAdapter } from '../modules/platform/infrastructure/owner-center-activation.js';
+import { PostgresPlatformRepository } from '../modules/platform/infrastructure/postgres-platform.js';
+import { SetupService } from '../modules/onboarding/application/setup-service.js';
+import { PostgresSettlementRepository } from '../modules/settlements/infrastructure/postgres-settlements.js';
+import { SettlementService } from '../modules/settlements/application/settlement-service.js';
+import { PostgresExpenseRepository } from '../modules/expenses/infrastructure/postgres-expenses.js';
+import { ExpenseService } from '../modules/expenses/application/expense-service.js';
+import { PostgresClinicalRepository } from '../modules/clinical/infrastructure/postgres-clinical.js';
+import { ClinicalService } from '../modules/clinical/application/clinical-service.js';
+import { PostgresPricingRepository } from '../modules/pricing/infrastructure/postgres-pricing.js';
+import { PricingService } from '../modules/pricing/application/pricing-service.js';
+import { PostgresLoyaltyRepository } from '../modules/loyalty/infrastructure/postgres-loyalty.js';
+import { LoyaltyService } from '../modules/loyalty/application/loyalty-service.js';
+import { PostgresBackupRepository } from '../modules/backup/infrastructure/postgres-backup.js';
+import { BackupService } from '../modules/backup/application/backup-service.js';
+import { PostgresAttendanceRepository } from '../modules/attendance/infrastructure/postgres-attendance.js';
+import { AttendanceService } from '../modules/attendance/application/attendance-service.js';
+import { ReplenishmentService } from '../modules/replenishment/application/replenishment-service.js';
+import { Party360Service } from '../modules/party360/application/party360-service.js';
+import { PostgresDrugMasterRepository } from '../modules/drugmaster/infrastructure/postgres-drug-master.js';
+import { DrugMasterService } from '../modules/drugmaster/application/drug-master-service.js';
+import { DocumentService } from '../modules/documents/application/document-service.js';
+import { PostgresIdempotencyRepository } from '../modules/idempotency/infrastructure/postgres-idempotency.js';
+import { OperationalAlertService } from '../modules/alerts/application/operational-alert-service.js';
+import { ReconciliationService } from '../modules/reconciliation/application/reconciliation-service.js';
 
-const createSystemService=require('../modules/system/application/service');
-const createIdentityService=require('../modules/identity/application/service');
-const createClinicalService=require('../modules/clinical/application/service');
-const createSalesService=require('../modules/sales/application/service');
-const createInventoryService=require('../modules/inventory/application/service');
-const createPurchasesService=require('../modules/purchases/application/service');
-const createDataService=require('../modules/compatibility-data/application/service');
-const createReconciliationService=require('../modules/reconciliation/application/service');
-const createTransactionsService=require('../modules/transactions/application/service');
-const createAccountingService=require('../modules/accounting/application/service');
-const createCashService=require('../modules/cash/application/service');
-const createBackupService=require('../modules/backup/application/service');
-const createPlatformService=require('../modules/platform/application/service');
+export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
+  const organization = new PostgresOrganizationRepository(db);
+  const identity = new PostgresIdentityRepository(db);
+  const audit = new PostgresAuditRepository(db);
+  const catalog = new PostgresCatalogRepository(db);
+  const customers = new PostgresCustomerRepository(db);
+  const suppliers = new PostgresSupplierRepository(db);
+  const settings = new PostgresSettingsRepository(db);
+  const inventory = new PostgresInventoryRepository(db);
+  const cash = new PostgresCashRepository(db);
+  const accounting = new PostgresAccountingRepository(db);
+  const sales = new PostgresSalesRepository(db);
+  const purchases = new PostgresPurchaseRepository(db);
+  const reports = new PostgresReportRepository(db);
+  const notifications = new PostgresNotificationRepository(db);
+  const settlements = new PostgresSettlementRepository(db);
+  const expenses = new PostgresExpenseRepository(db);
+  const clinical = new PostgresClinicalRepository(db);
+  const pricing = new PostgresPricingRepository(db);
+  const loyaltyRepository = new PostgresLoyaltyRepository(db);
+  const loyalty = new LoyaltyService(loyaltyRepository);
+  const backup = new PostgresBackupRepository(db);
+  const attendance = new PostgresAttendanceRepository(db);
+  const drugMaster = new PostgresDrugMasterRepository(db);
+  const idempotency = new PostgresIdempotencyRepository(db);
+  const reconciliation = new ReconciliationService(sales, purchases, accounting, cash, inventory, settlements);
+  const platformStore = new PostgresPlatformRepository(db);
+  const activation = new OwnerCenterActivationAdapter(config.ownerCenterUrl, config.ownerProductCode);
 
-const routeRegistrars:any[]=[
- ['system',require('../modules/system/api/routes')],
- ['identity',require('../modules/identity/api/routes')],
- ['organization',require('../modules/organization/api/routes')],
- ['sales',require('../modules/sales/api/routes')],
- ['cash',require('../modules/cash/api/routes')],
- ['inventory',require('../modules/inventory/api/routes')],
- ['reporting',require('../modules/reporting/api/routes')],
- ['reconciliation',require('../modules/reconciliation/api/routes')],
- ['compatibility-data',require('../modules/compatibility-data/api/routes')],
- ['transactions',require('../modules/transactions/api/routes')],
- ['clinical',require('../modules/clinical/api/routes')],
- ['integrations',require('../modules/integrations/api/routes')],
- ['accounting',require('../modules/accounting/api/routes')],
- ['backup',require('../modules/backup/api/routes')],
- ['platform',require('../modules/platform/api/routes')]
-];
-
-const serviceFactories:any[]=[
- ['system',createSystemService],
- ['__common__',createCommonService],
- ['identity',createIdentityService],
- ['clinical',createClinicalService],
- ['inventory',createInventoryService],
- ['sales',createSalesService],
- ['purchases',createPurchasesService],
- ['compatibility-data',createDataService],
- ['reconciliation',createReconciliationService],
- ['cash',createCashService],
- ['transactions',createTransactionsService],
- ['accounting',createAccountingService],
- ['backup',createBackupService],
- ['platform',createPlatformService]
-];
-
-export function createCompositionRoot({pool,rootDir,appVersion,express}:any){
- const services:any={
-  pool,rootDir,APP_VERSION:appVersion,APP_SECRET:process.env.APP_SECRET||'',express,
-  fs,path,crypto,os,execFileAsync,Finance,eventBus:new InMemoryEventBus(),
-  ...storePolicy,...storeOwnership,...validation,...securityPolicy,runMigrations,...projections
- };
- for(const [name,factory] of serviceFactories){
-  const keys=name==='__common__'?['crypto']:(dependencyManifest[name]?.service||[]);
-  Object.assign(services,factory(pickDependencies(services,keys)));
- }
- return Object.freeze({
-  services,
-  registerRoutes(app:any){
-   for(const [name,register] of routeRegistrars){
-    const keys=dependencyManifest[name]?.routes||[];
-    register(app,pickDependencies(services,keys));
-   }
-  }
- });
+  return {
+    organization,
+    identity,
+    audit,
+    catalog,
+    customers,
+    suppliers,
+    settings,
+    inventory,
+    inventoryService: new InventoryService(db, inventory, audit),
+    cash,
+    accounting,
+    sales,
+    purchases,
+    reports,
+    notifications,
+    settlements,
+    expenses,
+    clinical,
+    pricing,
+    loyalty,
+    backup,
+    attendance,
+    drugMaster,
+    idempotency,
+    authService: new AuthService(identity, config.appSecret, config.sessionHours),
+    catalogService: new CatalogService(catalog, audit),
+    salesService: new SalesService(db, sales, catalog, inventory, cash, accounting, customers, audit, settlements, identity, clinical, pricing, loyalty, idempotency),
+    purchaseService: new PurchaseService(db, purchases, suppliers, catalog, inventory, cash, accounting, audit, settlements),
+    settlementService: new SettlementService(db, settlements, customers, suppliers, cash, accounting, audit),
+    expenseService: new ExpenseService(db, expenses, cash, accounting, audit),
+    clinicalService: new ClinicalService(clinical, audit),
+    pricingService: new PricingService(db, pricing, catalog, audit),
+    backupService: new BackupService(db, backup, audit, config.backupSecret),
+    attendanceService: new AttendanceService(db, attendance, organization, audit),
+    replenishmentService: new ReplenishmentService(catalog, inventory, sales),
+    party360Service: new Party360Service(customers, suppliers, sales, purchases, settlements),
+    drugMasterService: new DrugMasterService(db, drugMaster, catalog, audit),
+    documentService: new DocumentService(sales, purchases, catalog, customers, suppliers, settings, organization),
+    reconciliation,
+    alertService: new OperationalAlertService(reports, notifications, cash, settlements, reconciliation),
+    setupService: new SetupService(db, organization, identity, settings, audit, activation, platformStore, accounting, config.allowStandaloneSetup),
+  };
 }

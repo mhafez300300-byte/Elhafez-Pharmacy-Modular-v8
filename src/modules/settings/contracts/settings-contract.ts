@@ -1,0 +1,1 @@
+import type{DbTx}from'../../../core/db/types.js';export type SettingsView=Readonly<{tenantId:string;pharmacyName:string;phone:string|null;address:string|null;invoiceFooter:string|null}>;export interface SettingsContract{get(tenantId:string,tx?:DbTx):Promise<SettingsView|null>;save(input:SettingsView,tx?:DbTx):Promise<SettingsView>;}
