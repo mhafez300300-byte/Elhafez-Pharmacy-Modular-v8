@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { gunzipSync } from 'node:zlib';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import type { UnitOfWork } from '../../../core/db/unit-of-work.js';
 import type { DbExecutor } from '../../../core/db/types.js';
 import { normalizeDrugMaster, parseActiveIngredients, parseBoolean } from '../domain/drug-master.js';
@@ -10,7 +10,7 @@ type SeedRow=ReturnType<typeof normalizeDrugMaster>;
 export async function seedReferenceDrugMaster(db:SeedDb,filePath:string){
   const current=Number((await db.query<{count:string}>(`SELECT count(*)::text count FROM drug_master`)).rows[0]?.count??0);
   if(current>0)return{seeded:false,count:current};
-  let csv='';try{const raw=await readFile(filePath);csv=filePath.endsWith('.gz')?gunzipSync(raw).toString():raw.toString();}catch(e:any){if(e?.code==='ENOENT')return{seeded:false,count:0,missing:true};throw e;}
+  let csv='';try{const raw=await readFile(filePath);if(filePath.endsWith('.br'))csv=brotliDecompressSync(raw).toString();else if(filePath.endsWith('.b64')){const decoded=Buffer.from(raw.toString().trim(),'base64');csv=filePath.includes('.br.')?brotliDecompressSync(decoded).toString():filePath.includes('.gz.')?gunzipSync(decoded).toString():decoded.toString();}else csv=filePath.endsWith('.gz')?gunzipSync(raw).toString():raw.toString();}catch(e:any){if(e?.code==='ENOENT')return{seeded:false,count:0,missing:true};throw e;}
   const sourceRows=parseSeedCsv(csv);const deduped=dedupe(sourceRows);let inserted=0;
   for(let start=0;start<deduped.length;start+=250){const batch=deduped.slice(start,start+250);await db.withTransaction(async tx=>{const params:unknown[]=[];const tuples=batch.map((d,index)=>{const stable=d.gtin||d.barcode||`${d.nameAr}|${d.manufacturer??''}|${d.strength??''}`;const id=`drug_${Buffer.from(stable).toString('base64url').slice(0,80)}`;const base=index*14;params.push(id,d.gtin,d.barcode,d.nameAr,d.nameEn,JSON.stringify(d.activeIngredients),d.strength,d.dosageForm,d.manufacturer,d.requiresPrescription,d.controlledClass,d.officialPrice,d.source,d.sourceUpdatedAt);return`($${base+1},$${base+2},$${base+3},$${base+4},$${base+5},$${base+6}::jsonb,$${base+7},$${base+8},$${base+9},$${base+10},$${base+11},$${base+12},$${base+13},$${base+14})`;});await tx.query(`INSERT INTO drug_master(id,gtin,barcode,name_ar,name_en,active_ingredients,strength,dosage_form,manufacturer,requires_prescription,controlled_class,official_price,source,source_updated_at) VALUES ${tuples.join(',')} ON CONFLICT(id) DO UPDATE SET gtin=EXCLUDED.gtin,barcode=EXCLUDED.barcode,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,active_ingredients=EXCLUDED.active_ingredients,strength=EXCLUDED.strength,dosage_form=EXCLUDED.dosage_form,manufacturer=EXCLUDED.manufacturer,requires_prescription=EXCLUDED.requires_prescription,controlled_class=EXCLUDED.controlled_class,official_price=EXCLUDED.official_price,source=EXCLUDED.source,source_updated_at=EXCLUDED.source_updated_at,updated_at=now()`,params);});inserted+=batch.length;}
   return{seeded:true,count:inserted};

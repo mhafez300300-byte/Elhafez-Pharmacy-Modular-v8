@@ -16,19 +16,21 @@
     "start": "node dist/app/server.js",
     "check:db-ownership": "node scripts/check-database-ownership.mjs",
     "test:postgres": "npm run build:server && node scripts/postgres-integration.mjs",
-    "preflight": "npm run check && npm run build"
+    "preflight": "npm run check && npm run build",
+    "test:performance": "npm run build:server && node scripts/performance-drill.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
     "express": "5.1.0",
-    "pg": "8.16.3"
+    "pg": "8.16.3",
+    "exceljs": "4.4.0"
   },
   "devDependencies": {
+    "typescript": "5.8.3",
     "@types/express": "4.17.23",
-    "@types/node": "^22.15.30",
-    "@types/pg": "^8.15.5",
-    "typescript": "5.8.3"
+    "@types/node": "22.15.30",
+    "@types/pg": "8.15.5"
   }
 }

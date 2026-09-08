@@ -54,7 +54,7 @@ function renderSales(items:any[], products:Map<any,any>, customers:Map<any,any>,
         ...(profitVisible ? [h('td', {}, money(sale.profit))] : []),
         h('td', {}, sale.status === 'posted' ? 'معتمدة' : sale.status === 'returned' ? 'مرتجعة بالكامل' : 'مرتجع جزئي'),
         h('td', {}, new Date(sale.createdAt).toLocaleString('ar-EG')),
-        h('td', {}, h('div',{class:'section-actions'},h('button',{class:'btn sm',onClick:()=>window.open(`/api/documents/sales/${sale.id}/print`,'_blank')},'طباعة / PDF'),h('button',{class:'btn sm',onClick:()=>download(`/api/documents/sales/${sale.id}/excel`)},'Excel'))),
+        h('td', {}, h('div',{class:'section-actions'},h('button',{class:'btn sm',onClick:()=>window.open(`/api/documents/sales/${sale.id}/print`,'_blank')},'طباعة'),h('button',{class:'btn sm',onClick:()=>download(`/api/documents/sales/${sale.id}/pdf`)},'PDF'),h('button',{class:'btn sm',onClick:()=>void sharePdf(`/api/documents/sales/${sale.id}/pdf`,`فاتورة بيع - ${sale.number}.pdf`)},'مشاركة PDF'),h('button',{class:'btn sm',onClick:()=>download(`/api/documents/sales/${sale.id}/excel`)},'Excel'))),
         h('td', {}, btn)
       )
     );
@@ -112,3 +112,5 @@ function select(name:string, options:any[]) {
 }
 
 function download(url:string){const a=document.createElement('a');a.href=url;a.download='';document.body.append(a);a.click();a.remove();}
+
+async function sharePdf(url:string,filename:string){const r=await fetch(url,{credentials:'same-origin'});if(!r.ok)throw new Error('تعذر إنشاء PDF');const blob=await r.blob(),file=new File([blob],filename,{type:'application/pdf'}),nav=navigator as Navigator&{canShare?:(d:any)=>boolean;share?:(d:any)=>Promise<void>};if(nav.share&&(!nav.canShare||nav.canShare({files:[file]}))){await nav.share({files:[file],title:filename});return;}const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);}

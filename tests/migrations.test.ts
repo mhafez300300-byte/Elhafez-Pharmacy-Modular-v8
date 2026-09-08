@@ -1,0 +1,2 @@
+import test from'node:test';import assert from'node:assert/strict';import{migrations}from'../src/app/migrations.js';
+test('migration manifest has stable unique ids and non-empty SQL',()=>{assert.ok(migrations.length>=30);const ids=migrations.map(x=>x.id);assert.equal(new Set(ids).size,ids.length,'migration ids must be globally unique');for(const m of migrations){assert.match(m.id,/^\d{3}_[a-z0-9_]+$/);assert.ok(m.sql.trim().length>10,`${m.id} SQL is empty`);}});

@@ -1,32 +1,25 @@
-import{Pool}from'pg';import{randomBytes}from'node:crypto';
+import{Pool}from'pg';import{randomBytes}from'node:crypto';import{performance}from'node:perf_hooks';
 const raw=String(process.env.INTEGRATION_DATABASE_URL||'').trim();
 if(!raw){console.error('INTEGRATION_DATABASE_URL is required. Use a disposable PostgreSQL database, never production.');process.exit(2);}
-if(process.env.NODE_ENV==='production'){console.error('PostgreSQL integration drill refuses NODE_ENV=production.');process.exit(2);}
 if(process.env.DATABASE_URL&&process.env.DATABASE_URL===raw){console.error('INTEGRATION_DATABASE_URL must not equal DATABASE_URL.');process.exit(2);}
-const schema=`elhafez_it_${Date.now()}_${randomBytes(3).toString('hex')}`.replace(/[^a-z0-9_]/g,'');
-const admin=new Pool({connectionString:raw,max:1});
-let db;
+if(process.env.NODE_ENV==='production'&&process.env.ALLOW_INTEGRATION_DRILL!=='true'){console.error('Production environment requires ALLOW_INTEGRATION_DRILL=true for a distinct disposable integration database.');process.exit(2);}
+const schema=`elhafez_it_${Date.now()}_${randomBytes(3).toString('hex')}`.replace(/[^a-z0-9_]/g,'');const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};const admin=new Pool({connectionString:raw,max:1});let db;
 try{
-  await admin.query(`CREATE SCHEMA "${schema}"`);
-  const u=new URL(raw);u.searchParams.set('options',`-c search_path=${schema}`);
-  const[{PostgresDatabase},{runMigrations},{migrations},{createCompositionRoot}]=await Promise.all([
-    import('../dist/core/db/postgres.js'),import('../dist/core/db/migrator.js'),import('../dist/app/migrations.js'),import('../dist/app/composition-root.js'),
-  ]);
-  db=new PostgresDatabase(u.toString());
-  await runMigrations(db,migrations);
-  const applied=Number((await db.query('SELECT count(*)::int count FROM app_migrations')).rows[0]?.count??0);
-  if(applied!==migrations.length)throw new Error(`Migration count mismatch ${applied}/${migrations.length}`);
-  const client=await db.pool.connect();
-  try{
-    await client.query('BEGIN');await client.query('CREATE TABLE integration_tx_probe(id int primary key)');await client.query('INSERT INTO integration_tx_probe VALUES(1)');await client.query('ROLLBACK');
-    const probe=await client.query("SELECT to_regclass('integration_tx_probe') as name");if(probe.rows[0]?.name!==null)throw new Error('Transaction rollback probe failed');
-  }finally{client.release();}
-  const config={env:'test',port:3000,host:'127.0.0.1',databaseUrl:u.toString(),appSecret:'integration-app-secret-32-characters-minimum',backupSecret:'integration-backup-secret-32-characters-min',sessionHours:12,allowStandaloneSetup:true,ownerProductCode:'PHARMAFLOW',drugMasterAutoSeed:false,drugMasterSeedFile:'data/drug-master-egypt-reference.csv.gz'};
-  const root=createCompositionRoot(db,config);
-  const branches=await root.organization.listActiveTenantBranches();
-  if(branches.length!==0)throw new Error('Disposable schema should start without tenants');
-  console.log(`PostgreSQL integration PASS — ${applied} migrations + transaction rollback + composition root.`);
-}finally{
-  if(db)await db.close().catch(()=>{});
-  await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`).catch(()=>{});await admin.end().catch(()=>{});
-}
+ await admin.query(`CREATE SCHEMA "${schema}"`);const u=new URL(raw);u.searchParams.set('options',`-c search_path=${schema}`);
+ const[{PostgresDatabase},{runMigrations},{migrations},{createCompositionRoot},{seedReferenceDrugMaster}]=await Promise.all([import('../dist/core/db/postgres.js'),import('../dist/core/db/migrator.js'),import('../dist/app/migrations.js'),import('../dist/app/composition-root.js'),import('../dist/modules/drugmaster/infrastructure/seed-reference.js')]);
+ db=new PostgresDatabase(u.toString());await runMigrations(db,migrations);const applied=Number((await db.query('SELECT count(*)::int count FROM app_migrations')).rows[0]?.count??0);assert(applied===migrations.length,`Migration count mismatch ${applied}/${migrations.length}`);
+ const client=await db.pool.connect();try{await client.query('BEGIN');await client.query('CREATE TABLE integration_tx_probe(id int primary key)');await client.query('INSERT INTO integration_tx_probe VALUES(1)');await client.query('ROLLBACK');const probe=await client.query("SELECT to_regclass('integration_tx_probe') as name");assert(probe.rows[0]?.name===null,'Transaction rollback probe failed');}finally{client.release();}
+ const config={env:'test',port:3000,host:'127.0.0.1',databaseUrl:u.toString(),appSecret:'integration-app-secret-32-characters-minimum',backupSecret:'integration-backup-secret-32-characters-min',sessionHours:12,allowStandaloneSetup:true,ownerProductCode:'PHARMAFLOW',drugMasterAutoSeed:false,drugMasterSeedFile:'data/drug-master-egypt-reference.csv.br',alertRefreshMinutes:15,cleanupHours:6};const root=createCompositionRoot(db,config);
+ const setup=await root.setupService.setup({pharmacyName:'IT Pharmacy',branchName:'Main',currency:'EGP',adminName:'Admin',adminUsername:'itadmin',adminPin:'1234'}),t='default',b=setup.branch.id,uid=setup.user.id;assert((await root.identity.authenticate('itadmin','1234'))?.id===uid,'Authentication failed after setup');
+ await root.cash.openShift({id:'shift_it',tenantId:t,branchId:b,userId:uid,openingCash:100});
+ const product=await root.catalogService.create(t,uid,{name:'IT Product',barcode:'IT-0001',sellingPrice:100,costPrice:50,taxRate:0,reorderLevel:2,active:true});await root.suppliers.create({id:'sup_it',tenantId:t,name:'IT Supplier',phone:null,active:true});await root.customers.create({id:'cus_it',tenantId:t,name:'IT Customer',phone:null,creditLimit:1000,active:true});
+ const purchase=await root.purchaseService.receive(t,uid,{branchId:b,supplierId:'sup_it',payment:'credit',lines:[{productId:product.id,quantity:12,unitCost:50,batchNo:'IT-B1',expiryDate:'2030-12-31'}]});assert(purchase.total===600,'Purchase total mismatch');assert(await root.inventory.balance(t,b,product.id)===12,'Purchase did not increase stock');
+ const saleInput={branchId:b,customerId:null,payment:'cash',invoiceDiscount:0,loyaltyPointsToRedeem:0,idempotencyKey:'it-sale-idempotent',lines:[{productId:product.id,quantity:2}]};const sale=await root.salesService.post(t,uid,saleInput),replay=await root.salesService.post(t,uid,saleInput);assert(replay.id===sale.id,'Idempotency replay created a second sale');assert(await root.inventory.balance(t,b,product.id)===10,'Idempotency replay changed stock');
+ const ret=await root.salesService.returnSale(t,uid,{saleId:sale.id,lines:[{saleLineId:sale.lines[0].id,quantity:1,classification:'sellable'}]});assert(ret.total===100,'Cash return amount mismatch');assert(await root.inventory.balance(t,b,product.id)===11,'Return did not restore stock');
+ const creditSale=await root.salesService.post(t,uid,{branchId:b,customerId:'cus_it',payment:'credit',invoiceDiscount:0,loyaltyPointsToRedeem:0,idempotencyKey:'it-credit-sale',lines:[{productId:product.id,quantity:2}]});await root.settlementService.pay(t,uid,{branchId:b,partyType:'customer',partyId:'cus_it',method:'cash',amount:150,reference:'IT partial payment'});const creditReturn=await root.salesService.returnSale(t,uid,{saleId:creditSale.id,lines:[{saleLineId:creditSale.lines[0].id,quantity:2,classification:'sellable'}]});assert(creditReturn.total===200,'Credit return total mismatch');assert(Math.abs(await root.settlements.creditBalance(t,'customer','cus_it')-150)<0.001,'Customer credit was not created after over-settled return');assert(Math.abs(await root.settlements.balance(t,'customer','cus_it'))<0.001,'Customer receivable should be settled after full return');
+ const recon=await root.reconciliation.checkTenant(t);assert(recon.critical===0,`Reconciliation found ${recon.critical} critical issue(s)`);
+ const seedStart=performance.now(),seed=await seedReferenceDrugMaster(db,config.drugMasterSeedFile),seedMs=performance.now()-seedStart;assert(seed.count===25065,`Drug master seed expected 25065, got ${seed.count}`);const qStart=performance.now();for(const q of['pan','para','amox','vit','622'])await root.drugMaster.search(q,25);const searchMs=performance.now()-qStart;assert(await root.drugMaster.count()===25065,'Drug master count mismatch after seed');
+ const envelope=await root.backupService.exportEncrypted(t,uid),inspection=root.backupService.inspectEncrypted(t,envelope);assert(inspection.compatible&&inspection.tenantMatch&&inspection.requiredTablesPresent,'Backup inspection failed');const marker=await root.catalogService.create(t,uid,{name:'RESTORE MARKER',barcode:'IT-RESTORE-MARKER',sellingPrice:1,costPrice:1,taxRate:0,reorderLevel:0,active:true});assert(!!await root.catalog.get(t,marker.id),'Restore marker was not created');await root.backupService.restoreEncrypted(t,uid,envelope,'RESTORE ELHAFEZ PHARMACY');assert(await root.catalog.get(t,marker.id)===null,'Restore drill failed to remove post-backup marker');assert(!!await root.catalog.findByBarcode(t,'IT-0001'),'Restore drill lost pre-backup product');
+ const auditIntegrity=await root.audit.verify(t);assert(auditIntegrity.ok,'Audit hash chain failed integrity verification');
+ console.log(`PostgreSQL commercial integration PASS — ${applied} migrations; purchase/sale/idempotency/return/credit/reconciliation; 25,065 drug seed in ${Math.round(seedMs)}ms; 5 searches in ${Math.round(searchMs)}ms; encrypted backup/restore; audit integrity.`);
+}finally{if(db)await db.close().catch(()=>{});await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`).catch(()=>{});await admin.end().catch(()=>{});}

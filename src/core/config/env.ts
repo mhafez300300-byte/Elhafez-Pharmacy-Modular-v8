@@ -46,7 +46,7 @@ export function loadConfig(): AppConfig {
     ...(ownerCenterUrl ? { ownerCenterUrl } : {}),
     ownerProductCode: process.env.OWNER_PRODUCT_CODE?.trim() || 'PHARMAFLOW',
     drugMasterAutoSeed: String(process.env.DRUG_MASTER_AUTO_SEED ?? 'true').toLowerCase() === 'true',
-    drugMasterSeedFile: process.env.DRUG_MASTER_SEED_FILE?.trim() || 'data/drug-master-egypt-reference.csv.gz',
+    drugMasterSeedFile: process.env.DRUG_MASTER_SEED_FILE?.trim() || 'data/drug-master-egypt-reference.csv.br',
     alertRefreshMinutes:readInt('ALERT_REFRESH_MINUTES',15),
     cleanupHours:readInt('SECURITY_CLEANUP_HOURS',6),
   };

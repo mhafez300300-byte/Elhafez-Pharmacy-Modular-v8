@@ -21,6 +21,7 @@ import { loyaltyMigrations } from '../modules/loyalty/infrastructure/migrations.
 import { attendanceMigrations } from '../modules/attendance/infrastructure/migrations.js';
 import { drugMasterMigrations } from '../modules/drugmaster/infrastructure/migrations.js';
 import { idempotencyMigrations } from '../modules/idempotency/infrastructure/migrations.js';
+import { salesDraftMigrations } from '../modules/salesdrafts/infrastructure/migrations.js';
 
 export const migrations: readonly Migration[] = [
   ...organizationMigrations,
@@ -45,4 +46,5 @@ export const migrations: readonly Migration[] = [
   ...attendanceMigrations,
   ...drugMasterMigrations,
   ...idempotencyMigrations,
+  ...salesDraftMigrations,
 ];

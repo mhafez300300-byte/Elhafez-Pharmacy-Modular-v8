@@ -1,0 +1,4 @@
+import test from'node:test';import assert from'node:assert/strict';import{normalizeDrugMaster,parseActiveIngredients,parseBoolean}from'../src/modules/drugmaster/domain/drug-master.js';
+test('drug master normalizes pharmacy reference data',()=>{const d=normalizeDrugMaster({nameAr:'  Panadol  ',activeIngredients:['PARACETAMOL','PARACETAMOL'],officialPrice:12.5,requiresPrescription:false});assert.equal(d.nameAr,'Panadol');assert.deepEqual(d.activeIngredients,['PARACETAMOL']);assert.equal(d.officialPrice,12.5);});
+test('active ingredients are split and deduplicated',()=>assert.deepEqual(parseActiveIngredients('A+B;A|C'),['A','B','C']));
+test('rx boolean parser recognizes common reference markers',()=>{assert.equal(parseBoolean('RX'),true);assert.equal(parseBoolean('yes'),true);assert.equal(parseBoolean(''),false);});

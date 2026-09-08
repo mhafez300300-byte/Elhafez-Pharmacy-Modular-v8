@@ -8,6 +8,8 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache chromium && ln -sf "$(command -v chromium-browser || command -v chromium)" /usr/local/bin/elhafez-chromium
+ENV CHROMIUM_PATH=/usr/local/bin/elhafez-chromium
 COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist

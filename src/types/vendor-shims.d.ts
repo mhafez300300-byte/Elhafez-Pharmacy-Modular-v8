@@ -41,3 +41,10 @@ declare module 'pg' {
 declare module 'node:test' { const test:any; export default test; }
 declare module 'node:assert/strict' { const assert:any; export default assert; }
 declare module 'node:fs/promises' { export const readFile:any; export const readdir:any; }
+declare module 'exceljs' { export class Workbook { xlsx:any; worksheets:any[]; } }
+declare module 'node:child_process' { export const execFile:any; }
+declare module 'node:util' { export const promisify:any; }
+declare module 'node:os' { export function tmpdir():string; }
+declare module 'node:fs/promises' { export const writeFile:any; export const mkdtemp:any; export const rm:any; }
+
+declare module 'node:zlib' { export const gunzipSync:any; export const brotliDecompressSync:any; }

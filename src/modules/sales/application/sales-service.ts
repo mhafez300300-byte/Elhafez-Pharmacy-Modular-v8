@@ -141,7 +141,7 @@ export class SalesService{
       if(remainingAfter<=1e-9&&rows.length){const exactRemaining=round2(Math.max(0,sale.total-previousReturnedAmount)),delta=round2(exactRemaining-total);rows[rows.length-1]!.amount=round2(rows[rows.length-1]!.amount+delta);total=exactRemaining;}
       const remainingRefundable=round2(Math.max(0,sale.total-previousReturnedAmount));if(total>remainingRefundable+0.01)throw new AppError('RETURN_AMOUNT_INVALID','قيمة المرتجع تتجاوز المتبقي القابل للرد',409,{remainingRefundable,total});
       await this.sales.saveReturn({id:returnId,tenantId,saleId:sale.id,branchId:sale.branchId,userId,total,...(input.reason?{reason:input.reason}:{}),lines:rows},tx);
-      if(sale.payment==='credit')await this.settlements.reduceObligationByReference({tenantId,referenceType:'sale',referenceId:sale.id,amount:total},tx);
+      const creditReduction=sale.payment==='credit'&&sale.customerId?await this.settlements.reduceObligationByReference({tenantId,partyType:'customer',partyId:sale.customerId,referenceType:'sale',referenceId:sale.id,amount:total,creditReferenceType:'sale_return',creditReferenceId:returnId},tx):null;
       if(sale.payment==='cash'){
         const shift=await this.cash.getOpenShift(tenantId,sale.branchId,undefined,tx);if(!shift)throw new AppError('OPEN_SHIFT_REQUIRED','يلزم وردية مفتوحة لإتمام رد نقدي',409);
         await this.cash.recordMovement({id:newId('cmv'),tenantId,branchId:sale.branchId,shiftId:shift.id,kind:'refund',amount:-total,referenceType:'sale_return',referenceId:returnId},tx);
@@ -149,8 +149,8 @@ export class SalesService{
       const proportion=sale.total>0?Math.max(0,Math.min(1,total/sale.total)):0;
       const loyaltyAdjustment=sale.customerId?await this.loyalty.reverseForReturn({tenantId,customerId:sale.customerId,earnedPoints:sale.loyaltyPointsEarned,redeemedPoints:sale.loyaltyPointsRedeemed,proportion,referenceId:returnId},tx):{restoredRedeemedPoints:0,reversedEarnedPoints:0};
       const taxReturn=round2(sale.tax*proportion),preTaxReturn=round2(Math.max(0,total-taxReturn));
-      await this.accounting.post({id:newId('jrn'),tenantId,branchId:sale.branchId,referenceType:'sale_return',referenceId:returnId,description:`مرتجع ${sale.number}`,lines:[{accountCode:'4190',debit:preTaxReturn,credit:0},{accountCode:'2130',debit:taxReturn,credit:0},{accountCode:sale.payment==='credit'?'1200':'1100',debit:0,credit:total},...(cost>0?[{accountCode:'1300',debit:cost,credit:0},{accountCode:'5100',debit:0,credit:cost}]:[])]},tx);
-      await this.audit.record({tenantId,userId,action:'sale.returned',entity:'sale_return',entityId:returnId,detail:{saleId:sale.id,total,loyaltyAdjustment}},tx);
+      await this.accounting.post({id:newId('jrn'),tenantId,branchId:sale.branchId,referenceType:'sale_return',referenceId:returnId,description:`مرتجع ${sale.number}`,lines:[{accountCode:'4190',debit:preTaxReturn,credit:0},{accountCode:'2130',debit:taxReturn,credit:0},...(sale.payment==='credit'?[...(creditReduction&&creditReduction.applied>0?[{accountCode:'1200',debit:0,credit:creditReduction.applied}]:[]),...(creditReduction&&creditReduction.excess>0?[{accountCode:'2140',debit:0,credit:creditReduction.excess}]:[])]:[{accountCode:'1100',debit:0,credit:total}]),...(cost>0?[{accountCode:'1300',debit:cost,credit:0},{accountCode:'5100',debit:0,credit:cost}]:[])]},tx);
+      await this.audit.record({tenantId,userId,action:'sale.returned',entity:'sale_return',entityId:returnId,detail:{saleId:sale.id,total,loyaltyAdjustment,creditReduction}},tx);
       return{id:returnId,total,loyaltyAdjustment};
     });
   }

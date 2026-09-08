@@ -44,6 +44,10 @@ import { DocumentService } from '../modules/documents/application/document-servi
 import { PostgresIdempotencyRepository } from '../modules/idempotency/infrastructure/postgres-idempotency.js';
 import { OperationalAlertService } from '../modules/alerts/application/operational-alert-service.js';
 import { ReconciliationService } from '../modules/reconciliation/application/reconciliation-service.js';
+import { PostgresSalesDraftRepository } from '../modules/salesdrafts/infrastructure/postgres-sales-drafts.js';
+import { SalesDraftService } from '../modules/salesdrafts/application/sales-draft-service.js';
+import { DataImportService } from '../modules/dataimport/application/data-import-service.js';
+import { ChromiumPdfRenderer } from '../modules/documents/infrastructure/chromium-pdf-renderer.js';
 
 export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
   const organization = new PostgresOrganizationRepository(db);
@@ -71,6 +75,8 @@ export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
   const drugMaster = new PostgresDrugMasterRepository(db);
   const idempotency = new PostgresIdempotencyRepository(db);
   const reconciliation = new ReconciliationService(sales, purchases, accounting, cash, inventory, settlements);
+  const salesDrafts = new PostgresSalesDraftRepository(db);
+  const pdfRenderer = new ChromiumPdfRenderer();
   const platformStore = new PostgresPlatformRepository(db);
   const activation = new OwnerCenterActivationAdapter(config.ownerCenterUrl, config.ownerProductCode);
 
@@ -99,6 +105,7 @@ export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
     attendance,
     drugMaster,
     idempotency,
+    salesDrafts,
     authService: new AuthService(identity, config.appSecret, config.sessionHours),
     catalogService: new CatalogService(catalog, audit),
     salesService: new SalesService(db, sales, catalog, inventory, cash, accounting, customers, audit, settlements, identity, clinical, pricing, loyalty, idempotency),
@@ -112,7 +119,9 @@ export function createCompositionRoot(db: PostgresDatabase, config: AppConfig) {
     replenishmentService: new ReplenishmentService(catalog, inventory, sales),
     party360Service: new Party360Service(customers, suppliers, sales, purchases, settlements),
     drugMasterService: new DrugMasterService(db, drugMaster, catalog, audit),
-    documentService: new DocumentService(sales, purchases, catalog, customers, suppliers, settings, organization),
+    documentService: new DocumentService(sales, purchases, catalog, customers, suppliers, settings, organization, pdfRenderer),
+    salesDraftService: new SalesDraftService(db, salesDrafts, audit),
+    dataImportService: new DataImportService(db, catalog, customers, suppliers, inventory, organization, audit),
     reconciliation,
     alertService: new OperationalAlertService(reports, notifications, cash, settlements, reconciliation),
     setupService: new SetupService(db, organization, identity, settings, audit, activation, platformStore, accounting, config.allowStandaloneSetup),

@@ -24,6 +24,7 @@ export function calculateReorder(input: ReorderInput): ReorderDecision {
   const targetDays = Math.min(90, Math.max(7, Number(input.targetDays) || 21));
   const avgDaily7 = net7 / 7;
   const avgDaily30 = net30 / 30;
+  // Recent demand has more weight, while 30-day demand stabilizes one-off spikes.
   const dailyDemand = avgDaily7 > 0 && avgDaily30 > 0
     ? (avgDaily7 * 0.65) + (avgDaily30 * 0.35)
     : Math.max(avgDaily7, avgDaily30);
