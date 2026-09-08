@@ -1,0 +1,2 @@
+export type GeneratedDocument=Readonly<{content:string;contentType:string;filename:string}>;
+export interface DocumentContract{salePrint(tenantId:string,saleId:string):Promise<GeneratedDocument>;saleExcel(tenantId:string,saleId:string):Promise<GeneratedDocument>;purchasePrint(tenantId:string,purchaseId:string):Promise<GeneratedDocument>;purchaseExcel(tenantId:string,purchaseId:string):Promise<GeneratedDocument>;}

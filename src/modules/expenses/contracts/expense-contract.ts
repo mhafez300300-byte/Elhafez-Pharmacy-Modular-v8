@@ -1,0 +1,1 @@
+import type{DbTx}from'../../../core/db/types.js';export type ExpenseView=Readonly<{id:string;tenantId:string;branchId:string;userId:string;category:string;description:string;amount:number;method:'cash'|'card'|'bank';occurredAt:string}>;export interface ExpenseContract{save(v:ExpenseView,tx:DbTx):Promise<void>;list(tenantId:string,limit?:number):Promise<ExpenseView[]>;}

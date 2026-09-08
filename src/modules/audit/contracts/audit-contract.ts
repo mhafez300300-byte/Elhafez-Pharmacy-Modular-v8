@@ -1,0 +1,2 @@
+import type { DbTx } from '../../../core/db/types.js';
+export interface AuditContract { record(input:{tenantId:string;userId?:string;action:string;entity:string;entityId?:string;detail?:unknown},tx?:DbTx):Promise<void>; list(tenantId:string,limit?:number):Promise<unknown[]>; verifyChain(tenantId:string):Promise<{ok:boolean;checked:number;unhashed:number;firstBrokenId:number|null;headHash:string|null}>; }

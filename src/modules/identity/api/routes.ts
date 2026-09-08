@@ -1,47 +1,18 @@
-import type { IdentityRouteDependencies } from '../contracts/dependencies';
-'use strict';
-
-module.exports=function register_auth(app:any,ctx:IdentityRouteDependencies){
- const {
-  pool,
-  path,
-  crypto,
-  cookie,
-  sha256,
-  scryptHash,
-  verifyHash,
-  safeUser,
-  rateLimit,
-  firstTenant,
-  dropSessionCache,
-  needAuth,
-  auditDb,
-  base32Encode,
-  encryptSecret,
-  decryptSecret,
-  verifyTotp,
-  issueSession,
-  verifyCurrentCredential
- }=ctx;
-
- // /api/auth/login
-// /api/auth/logout
-// /api/auth/totp/setup
-// /api/auth/totp/enable
-// /api/auth/totp/disable
-// /api/auth/change-secret
-
-app.post('/api/auth/login',async(req,res)=>{if(!rateLimit(`login:${req.ip}`,12,5*60_000))return res.status(429).json({error:'TOO_MANY_ATTEMPTS'});const t=await firstTenant();if(!t)return res.status(400).json({error:'SETUP_REQUIRED'});const {userId,username,secret,pin,password,totp}=req.body||{};const q=await pool.query('SELECT * FROM users WHERE tenant_id=$1 AND (id=$2 OR lower(username)=lower($3)) LIMIT 1',[t.id,userId||'',username||'']);const u=q.rows[0];if(!u||!u.active)return res.status(401).json({error:'INVALID_CREDENTIALS'});if(u.locked_until&&new Date(u.locked_until)>new Date())return res.status(423).json({error:'ACCOUNT_LOCKED'});const s=String(secret??pin??password??'');const ok=(u.pin_hash&&verifyHash(s,u.pin_hash))||(u.password_hash&&verifyHash(s,u.password_hash));if(!ok){const n=Number(u.failed_attempts||0)+1;await pool.query(`UPDATE users SET failed_attempts=$2,locked_until=CASE WHEN $2>=5 THEN now()+interval '15 minutes' ELSE NULL END WHERE id=$1`,[u.id,n]);return res.status(401).json({error:'INVALID_CREDENTIALS'})}if(u.totp_secret_enc&&!verifyTotp(decryptSecret(u.totp_secret_enc),totp))return res.status(401).json({error:'TOTP_REQUIRED'});const c=await pool.connect();try{await c.query('BEGIN');await c.query('UPDATE users SET failed_attempts=0,locked_until=NULL WHERE id=$1',[u.id]);await issueSession(c,res,req,t.id,u.id);await auditDb(c,t.id,req,'تسجيل دخول',u.name,null,null,safeUser(u));await c.query('COMMIT')}catch(e){await c.query('ROLLBACK');throw e}finally{c.release()}res.json({ok:true,user:safeUser(u)})});
-
-app.post('/api/auth/logout',needAuth,async(req,res)=>{const tok=cookie(req,'pf_session');await pool.query('UPDATE sessions SET revoked_at=now() WHERE id=$1',[req.auth.sessionId]);if(tok)dropSessionCache(sha256(tok));res.clearCookie('pf_session',{path:'/'});res.json({ok:true})});
-
-app.post('/api/auth/totp/setup',needAuth,async(req,res)=>{const secret=base32Encode(crypto.randomBytes(20));const t=await firstTenant();const label=encodeURIComponent(`${t?.name||'Elhafez Pharmacy'}:${req.auth.user.username||req.auth.user.name}`),issuer=encodeURIComponent(t?.name||'Elhafez Pharmacy');res.json({secret,otpauth:`otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&digits=6&period=30`})});
-
-app.post('/api/auth/totp/enable',needAuth,async(req,res)=>{const secret=String(req.body?.secret||''),code=String(req.body?.code||''),current=String(req.body?.currentSecret||'');if(!await verifyCurrentCredential(req.auth.tenantId,req.auth.user.id,current))return res.status(401).json({error:'CURRENT_CREDENTIAL_INVALID'});if(!verifyTotp(secret,code))return res.status(400).json({error:'INVALID_TOTP'});await pool.query('UPDATE users SET totp_secret_enc=$2,updated_at=now() WHERE tenant_id=$1 AND id=$3',[req.auth.tenantId,encryptSecret(secret),req.auth.user.id]);res.json({ok:true})});
-
-app.post('/api/auth/totp/disable',needAuth,async(req,res)=>{const current=String(req.body?.currentSecret||''),code=String(req.body?.code||'');if(!await verifyCurrentCredential(req.auth.tenantId,req.auth.user.id,current))return res.status(401).json({error:'CURRENT_CREDENTIAL_INVALID'});const u=(await pool.query('SELECT totp_secret_enc FROM users WHERE tenant_id=$1 AND id=$2',[req.auth.tenantId,req.auth.user.id])).rows[0];if(u?.totp_secret_enc&&!verifyTotp(decryptSecret(u.totp_secret_enc),code))return res.status(400).json({error:'INVALID_TOTP'});await pool.query('UPDATE users SET totp_secret_enc=NULL,updated_at=now() WHERE tenant_id=$1 AND id=$2',[req.auth.tenantId,req.auth.user.id]);res.json({ok:true})});
-
-app.post('/api/auth/change-secret',needAuth,async(req,res)=>{const kind=req.body?.kind==='password'?'password_hash':'pin_hash',value=String(req.body?.value||''),current=String(req.body?.currentSecret||'');if(!await verifyCurrentCredential(req.auth.tenantId,req.auth.user.id,current))return res.status(401).json({error:'CURRENT_CREDENTIAL_INVALID'});if(kind==='pin_hash'&&!/^\d{4,8}$/.test(value))return res.status(400).json({error:'PIN_INVALID'});if(kind==='password_hash'&&value.length<10)return res.status(400).json({error:'PASSWORD_TOO_SHORT'});await pool.query(`UPDATE users SET ${kind}=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2`,[req.auth.tenantId,req.auth.user.id,scryptHash(value)]);await pool.query('UPDATE sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND id<>$3',[req.auth.tenantId,req.auth.user.id,req.auth.sessionId]);dropSessionCache();res.json({ok:true})});
-};
-
-export {};
+import { Router } from 'express';
+import { asyncHandler } from '../../../core/http/async-handler.js';
+import { AppError } from '../../../core/errors/app-error.js';
+import { requireAuth } from '../../../core/http/require-auth.js';
+import{requirePermission}from'../../../core/http/require-permission.js';
+import{newId}from'../../../core/types/id.js';
+import type { IdentityContract } from '../contracts/identity-contract.js';
+import type { AuthService } from '../application/auth-service.js';
+export function identityRoutes(auth:AuthService,identity:IdentityContract){const router=Router();
+router.post('/login',asyncHandler(async(req,res)=>{const username=String(req.body?.username??'').trim(),pin=String(req.body?.pin??'').trim();if(!username||!pin)throw new AppError('LOGIN_FIELDS_REQUIRED','اسم المستخدم وPIN مطلوبان',422);const result=await auth.login(username,pin,String(req.headers['user-agent']??'متصفح').slice(0,160));res.cookie('elhafez_session',result.token,{httpOnly:true,sameSite:'lax',secure:process.env.NODE_ENV==='production',maxAge:result.maxAgeMs,path:'/'});res.json({user:result.user,expiresAt:result.expiresAt});}));
+router.post('/logout',asyncHandler(async(req,res)=>{if(req.auth)await auth.logout(req.auth.tenantId,req.auth.userId,req.auth.sessionId);res.clearCookie('elhafez_session',{path:'/'});res.status(204).end();}));
+router.get('/me',requireAuth,asyncHandler(async(req,res)=>{const user=await identity.findUser(req.auth!.tenantId,req.auth!.userId);if(!user)throw new AppError('USER_NOT_FOUND','المستخدم غير موجود',404);res.json({user,sessionId:req.auth!.sessionId});}));
+router.get('/sessions',requireAuth,asyncHandler(async(req,res)=>res.json({currentSessionId:req.auth!.sessionId,items:await identity.listSessions(req.auth!.tenantId,req.auth!.userId)})));
+router.post('/sessions/revoke-others',requireAuth,asyncHandler(async(req,res)=>res.json({revoked:await identity.revokeOtherSessions(req.auth!.tenantId,req.auth!.userId,req.auth!.sessionId)})));
+router.post('/sessions/:id/revoke',requireAuth,asyncHandler(async(req,res)=>{if(req.params.id===req.auth!.sessionId)throw new AppError('SESSION_CURRENT_REVOKE_USE_LOGOUT','استخدم تسجيل الخروج لإنهاء الجلسة الحالية',409);await identity.revokeSession(req.auth!.tenantId,req.auth!.userId,req.params.id);res.status(204).end();}));
+router.post('/pin',requireAuth,asyncHandler(async(req,res)=>{const currentPin=String(req.body?.currentPin??''),newPin=String(req.body?.newPin??'');if(!/^\d{4,8}$/.test(newPin))throw new AppError('PIN_INVALID','PIN الجديد يجب أن يكون من 4 إلى 8 أرقام',422);await identity.changePin(req.auth!.tenantId,req.auth!.userId,currentPin,newPin);res.clearCookie('elhafez_session',{path:'/'});res.status(204).end();}));
+router.get('/users',requireAuth,requirePermission('users.manage'),asyncHandler(async(req,res)=>res.json({items:await identity.listUsers(req.auth!.tenantId)})));
+router.post('/users',requireAuth,requirePermission('users.manage'),asyncHandler(async(req,res)=>{const pin=String(req.body?.pin??'');if(!/^\d{4,8}$/.test(pin))throw new AppError('PIN_INVALID','PIN يجب أن يكون من 4 إلى 8 أرقام',422);const name=String(req.body?.name??'').trim(),username=String(req.body?.username??'').trim();if(name.length<2||username.length<2)throw new AppError('USER_FIELDS_REQUIRED','اسم المستخدم مطلوب',422);res.status(201).json(await identity.createUser({id:newId('usr'),tenantId:req.auth!.tenantId,name,username,pin,role:String(req.body?.role??'cashier'),permissions:Array.isArray(req.body?.permissions)?req.body.permissions.map(String):[],maxDiscountPercent:Number(req.body?.maxDiscountPercent??0)}));}));return router;}

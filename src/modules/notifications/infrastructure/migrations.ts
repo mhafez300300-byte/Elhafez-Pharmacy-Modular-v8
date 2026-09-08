@@ -1,0 +1,4 @@
+import type{Migration}from'../../../core/db/migrator.js';export const notificationMigrations:readonly Migration[]=[
+{id:'014_notifications',sql:`CREATE TABLE notifications(id text PRIMARY KEY,tenant_id text NOT NULL REFERENCES org_tenants(id) ON DELETE CASCADE,user_id text NULL REFERENCES id_users(id),title text NOT NULL,body text NOT NULL,severity text NOT NULL DEFAULT 'info',read_at timestamptz NULL,created_at timestamptz NOT NULL DEFAULT now());CREATE INDEX notifications_tenant_time_idx ON notifications(tenant_id,created_at DESC);`},
+{id:'030_notification_alerts',sql:`ALTER TABLE notifications ADD COLUMN dedupe_key text NULL,ADD COLUMN resolved_at timestamptz NULL,ADD COLUMN link text NULL;CREATE UNIQUE INDEX notifications_dedupe_unique ON notifications(tenant_id,dedupe_key) WHERE dedupe_key IS NOT NULL;CREATE INDEX notifications_unread_idx ON notifications(tenant_id,created_at DESC) WHERE read_at IS NULL AND resolved_at IS NULL;`}
+];

@@ -1,18 +1,19 @@
-import type { OrganizationRouteDependencies } from '../contracts/dependencies';
-'use strict';
+import { Router } from 'express';
+import { requireAuth } from '../../../core/http/require-auth.js';
+import { asyncHandler } from '../../../core/http/async-handler.js';
+import type { OrganizationContract } from '../contracts/organization-contract.js';
+import { requirePermission } from '../../../core/http/require-permission.js';
+import { AppError } from '../../../core/errors/app-error.js';
+import { newId } from '../../../core/types/id.js';
 
-module.exports=function register_context(app:any,ctx:OrganizationRouteDependencies){
- const {
-  pool,
-  needAuth
- }=ctx;
-
- // /api/context
-// /api/context
-
-app.get('/api/context',needAuth,async(req,res)=>{const device=String(req.headers['x-device-id']||'');const row=(await pool.query('SELECT branch_id,cashbox_id,updated_at FROM user_contexts WHERE tenant_id=$1 AND user_id=$2 AND device_id=$3',[req.auth.tenantId,req.auth.user.id,device])).rows[0]||null;res.json(row?{branchId:row.branch_id,cashboxId:row.cashbox_id,updatedAt:row.updated_at}:{branchId:null,cashboxId:null})});
-
-app.put('/api/context',needAuth,async(req,res)=>{const device=String(req.headers['x-device-id']||''),branchId=String(req.body?.branchId||''),cashboxId=String(req.body?.cashboxId||'');if(branchId){const b=await pool.query(`SELECT 1 FROM records WHERE tenant_id=$1 AND store='branches' AND id=$2 AND COALESCE((data->>'active')::boolean,true)=true`,[req.auth.tenantId,branchId]);if(!b.rowCount)return res.status(422).json({error:'INVALID_BRANCH'})}if(cashboxId){const cb=await pool.query(`SELECT data FROM records WHERE tenant_id=$1 AND store='cashboxes' AND id=$2`,[req.auth.tenantId,cashboxId]);if(!cb.rowCount)return res.status(422).json({error:'INVALID_CASHBOX'});const cbBranch=String(cb.rows[0].data?.branchId||'');if(branchId&&cbBranch&&cbBranch!==branchId)return res.status(422).json({error:'CASHBOX_BRANCH_MISMATCH'})}await pool.query(`INSERT INTO user_contexts(tenant_id,user_id,device_id,branch_id,cashbox_id,updated_at) VALUES($1,$2,$3,$4,$5,now()) ON CONFLICT(tenant_id,user_id,device_id) DO UPDATE SET branch_id=EXCLUDED.branch_id,cashbox_id=EXCLUDED.cashbox_id,updated_at=now()`,[req.auth.tenantId,req.auth.user.id,device,branchId||null,cashboxId||null]);res.json({ok:true,branchId:branchId||null,cashboxId:cashboxId||null})});
-};
-
-export {};
+export function organizationRoutes(org: OrganizationContract) {
+  const router = Router();
+  router.use(requireAuth);
+  router.get('/branches', asyncHandler(async (req,res) => res.json({ items: await org.listBranches(req.auth!.tenantId) })));
+  router.post('/branches',requirePermission('settings.manage'),asyncHandler(async(req,res)=>{const name=String(req.body?.name??'').trim();if(name.length<2)throw new AppError('BRANCH_NAME_REQUIRED','اسم الفرع مطلوب',422);res.status(201).json(await org.createBranch({id:newId('br'),tenantId:req.auth!.tenantId,name}));}));
+  router.get('/me', asyncHandler(async (req,res) => {
+    const tenant = await org.getTenant(req.auth!.tenantId);
+    res.json({ tenant, branch: await org.getDefaultBranch(req.auth!.tenantId) });
+  }));
+  return router;
+}

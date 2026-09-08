@@ -1,34 +1,88 @@
-'use strict';
-const path=require('path');
-const {logger}=require('../core/logging/logger');
+import express from 'express';
+import path from 'node:path';
+import type { AppConfig } from '../core/config/env.js';
+import type { PostgresDatabase } from '../core/db/postgres.js';
+import { authContext } from '../core/http/request-context.js';
+import { errorMiddleware } from '../core/http/error-middleware.js';
+import { securityHeaders, sameOriginWriteGuard } from '../core/http/security-middleware.js';
+import { identityRoutes } from '../modules/identity/api/routes.js';
+import { hydratePrincipal } from '../modules/identity/api/principal-middleware.js';
+import { organizationRoutes } from '../modules/organization/api/routes.js';
+import { onboardingRoutes } from '../modules/onboarding/api/routes.js';
+import { catalogRoutes } from '../modules/catalog/api/routes.js';
+import { customerRoutes } from '../modules/customers/api/routes.js';
+import { supplierRoutes } from '../modules/suppliers/api/routes.js';
+import { inventoryRoutes } from '../modules/inventory/api/routes.js';
+import { cashRoutes } from '../modules/cash/api/routes.js';
+import { accountingRoutes } from '../modules/accounting/api/routes.js';
+import { salesRoutes } from '../modules/sales/api/routes.js';
+import { purchaseRoutes } from '../modules/purchases/api/routes.js';
+import { reportRoutes } from '../modules/reports/api/routes.js';
+import { settingsRoutes } from '../modules/settings/api/routes.js';
+import { auditRoutes } from '../modules/audit/api/routes.js';
+import { notificationRoutes } from '../modules/notifications/api/routes.js';
+import { settlementRoutes } from '../modules/settlements/api/routes.js';
+import { expenseRoutes } from '../modules/expenses/api/routes.js';
+import { clinicalRoutes } from '../modules/clinical/api/routes.js';
+import { pricingRoutes } from '../modules/pricing/api/routes.js';
+import { loyaltyRoutes } from '../modules/loyalty/api/routes.js';
+import { backupRoutes } from '../modules/backup/api/routes.js';
+import { attendanceRoutes } from '../modules/attendance/api/routes.js';
+import { replenishmentRoutes } from '../modules/replenishment/api/routes.js';
+import { party360Routes } from '../modules/party360/api/routes.js';
+import { drugMasterRoutes } from '../modules/drugmaster/api/routes.js';
+import { documentRoutes } from '../modules/documents/api/routes.js';
+import { alertRoutes } from '../modules/alerts/api/routes.js';
+import { reconciliationRoutes } from '../modules/reconciliation/api/routes.js';
+import { createCompositionRoot } from './composition-root.js';
+import { migrations } from './migrations.js';
 
-export function createApp({express,composition,rootDir}:any){
- const app=express();
- if(process.env.TRUST_PROXY==='1')app.set('trust proxy',1);
- app.disable('x-powered-by');
- app.use(express.json({limit:'6mb'}));
- app.use((req:any,res:any,next:any)=>{
-  res.setHeader('X-Content-Type-Options','nosniff');
-  res.setHeader('X-Frame-Options','SAMEORIGIN');
-  res.setHeader('Referrer-Policy','same-origin');
-  res.setHeader('Permissions-Policy','camera=(self), microphone=(), geolocation=()');
-  res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https:; font-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
-  if(process.env.NODE_ENV==='production')res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains');
-  next();
- });
- const services=composition.services;
- app.use((req:any,res:any,next:any)=>services.originOkay(req)?next():res.status(403).json({error:'Origin rejected'}));
- app.use(services.authOptional);
- composition.registerRoutes(app);
- app.use(express.static(path.join(rootDir,'public'),{
-  etag:true,maxAge:process.env.NODE_ENV==='production'?'1h':0,
-  setHeaders(res:any,filePath:string){const name=path.basename(filePath);if(name==='sw.js'||/\.(?:html|js|css|webmanifest)$/i.test(name))res.setHeader('Cache-Control','no-cache, must-revalidate');else if(/\.(png|jpg|jpeg|webp|svg|ico)$/i.test(name))res.setHeader('Cache-Control','public, max-age=604800, immutable')}
- }));
- app.use((req:any,res:any,next:any)=>{if(req.method==='GET'&&!req.path.startsWith('/api/')&&req.accepts('html'))return res.sendFile(path.join(rootDir,'public/index.html'));next()});
- app.use((err:any,req:any,res:any,next:any)=>{
-  logger.error('request_failed',{method:req.method,path:req.path,code:err.code||err.message,status:err.status||500});
-  const status=err.status||500;
-  res.status(status).json({error:err.code||err.message||'SERVER_ERROR',currentRevision:err.currentRevision,details:err.details});
- });
- return app;
+export type AppRoot=ReturnType<typeof createCompositionRoot>;
+export function createApp(db: PostgresDatabase, config: AppConfig, suppliedRoot?:AppRoot) {
+  const app = express();
+  const root = suppliedRoot??createCompositionRoot(db, config);
+  app.disable('x-powered-by');
+  app.use(securityHeaders);
+  app.use(sameOriginWriteGuard);
+  app.use((req:any,res:any,next:any)=>{const large=req.path==='/api/backup/restore'||req.path==='/api/backup/verify';return express.json({limit:large?'25mb':'2mb'})(req,res,next);});
+  app.use(authContext(config.appSecret));
+  app.use(hydratePrincipal(root.identity));
+
+  app.get('/api/health', (_req:any,res:any) => res.json({ok:true,service:'elhafez-pharmacy',version:'8.0.0'}));
+  app.get('/api/ready',async(_req:any,res:any,next:any)=>{try{await db.query('SELECT 1');const applied=Number((await db.query<{count:number}>('SELECT count(*)::int count FROM app_migrations')).rows[0]?.count??0),expected=migrations.length;if(applied!==expected)return res.status(503).json({ok:false,database:'ready',migrations:{applied,expected},version:'8.0.0'});res.json({ok:true,database:'ready',migrations:{applied,expected},version:'8.0.0'});}catch(e){next(e);}});
+  app.use('/api/setup', onboardingRoutes(root.setupService, db));
+  app.use('/api/auth', identityRoutes(root.authService, root.identity));
+  app.use('/api/organization', organizationRoutes(root.organization));
+  app.use('/api/products', catalogRoutes(root.catalogService, root.catalog));
+  app.use('/api/customers', customerRoutes(root.customers));
+  app.use('/api/suppliers', supplierRoutes(root.suppliers));
+  app.use('/api/inventory', inventoryRoutes(root.inventory, root.inventoryService, root.organization));
+  app.use('/api/cash', cashRoutes(root.cash, root.organization));
+  app.use('/api/accounting', accountingRoutes(root.accounting, root.audit));
+  app.use('/api/sales', salesRoutes(root.salesService, root.sales));
+  app.use('/api/purchases', purchaseRoutes(root.purchaseService, root.purchases));
+  app.use('/api/reports', reportRoutes(root.reports, root.organization));
+  app.use('/api/settings', settingsRoutes(root.settings));
+  app.use('/api/audit', auditRoutes(root.audit));
+  app.use('/api/notifications', notificationRoutes(root.notifications));
+  app.use('/api/settlements', settlementRoutes(root.settlementService, root.settlements));
+  app.use('/api/expenses', expenseRoutes(root.expenseService, root.expenses));
+  app.use('/api/clinical', clinicalRoutes(root.clinicalService, root.clinical));
+  app.use('/api/pricing', pricingRoutes(root.pricingService, root.pricing));
+  app.use('/api/loyalty', loyaltyRoutes(root.loyalty));
+  app.use('/api/backup', backupRoutes(root.backupService));
+  app.use('/api/attendance', attendanceRoutes(root.attendanceService, root.attendance));
+  app.use('/api/replenishment', replenishmentRoutes(root.replenishmentService, root.organization));
+  app.use('/api/party360', party360Routes(root.party360Service));
+  app.use('/api/drug-master', drugMasterRoutes(root.drugMasterService, root.drugMaster));
+  app.use('/api/documents', documentRoutes(root.documentService));
+  app.use('/api/alerts', alertRoutes(root.alertService, root.organization));
+  app.use('/api/reconciliation', reconciliationRoutes(root.reconciliation));
+
+  const publicDir=path.resolve(process.cwd(),'public');
+  app.use(express.static(publicDir,{etag:true,maxAge:config.env==='production'?'1h':0}));
+  app.get(/^(?!\/api\/).*/,(_req:any,res:any)=>res.sendFile(path.join(publicDir,'index.html')));
+  app.use((_req:any,res:any)=>res.status(404).json({error:'NOT_FOUND',message:'المسار غير موجود'}));
+  app.use(errorMiddleware);
+  return app;
 }

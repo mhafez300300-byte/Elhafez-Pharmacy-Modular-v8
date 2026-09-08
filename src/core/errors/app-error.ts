@@ -1,8 +1,15 @@
 export class AppError extends Error {
-  readonly status: number;
-  readonly code: string;
-  readonly details?: any;
-  constructor(code: string, status = 500, details?: any) {
-    super(code); this.name='AppError'; this.code=code; this.status=status; this.details=details;
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly status = 400,
+    public readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = 'AppError';
   }
 }
+
+export const invariant = (condition: unknown, code: string, message: string, status = 422): asserts condition => {
+  if (!condition) throw new AppError(code, message, status);
+};

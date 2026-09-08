@@ -1,20 +1,18 @@
 FROM node:22-alpine AS build
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --ignore-scripts --no-audit --no-fund
-COPY tsconfig.json ./
-COPY src ./src
-RUN npm run build
+RUN apk add --no-cache unzip
+COPY package.json ./
+RUN npm install --no-audit --no-fund
+COPY . .
+RUN unzip -o deploy-patch.zip -d /app && npm run build:server
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
-RUN apk add --no-cache chromium
 ENV NODE_ENV=production
-COPY package*.json ./
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist
-COPY public ./public
-COPY db ./db
+COPY --from=build /app/public ./public
 EXPOSE 3000
-STOPSIGNAL SIGTERM
-CMD ["node","dist/app/server.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+CMD ["node", "dist/app/server.js"]

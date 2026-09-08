@@ -1,20 +1,22 @@
 {
-  "name": "elhafez-pharmacy-professional",
+  "name": "elhafez-pharmacy-clean-v8",
   "version": "8.0.0",
   "private": true,
-  "description": "Elhafez Pharmacy — TypeScript Modular Monolith commercial ERP/POS",
-  "main": "dist/app/server.js",
+  "type": "module",
+  "description": "Elhafez Pharmacy v8 — clean TypeScript Modular Monolith rebuilt from scratch",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsc -p tsconfig.json",
+    "build:web": "tsc -p web/tsconfig.json && cp web/styles/app.css public/assets/app.css",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "test": "rm -rf .test-dist && tsc -p tsconfig.test.json && node --test .test-dist/tests/*.test.js",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "check:clean-room": "node scripts/check-clean-room.mjs",
+    "check": "npm run typecheck && npm run check:architecture && npm run check:db-ownership && npm run check:clean-room && npm test",
     "start": "node dist/app/server.js",
-    "dev": "npm run build && node dist/app/server.js",
-    "db:init": "node scripts/init-db.js",
-    "test": "npm run build && node --test tests/*.test.js",
-    "check": "npm run build && node scripts/check-modules.js",
-    "pilot": "node scripts/commercial-pilot.js",
-    "pilot:postgres": "node scripts/postgres-pilot.js",
-    "readiness": "node scripts/production-readiness.js"
+    "check:db-ownership": "node scripts/check-database-ownership.mjs",
+    "test:postgres": "npm run build:server && node scripts/postgres-integration.mjs",
+    "preflight": "npm run check && npm run build"
   },
   "engines": {
     "node": ">=20"
