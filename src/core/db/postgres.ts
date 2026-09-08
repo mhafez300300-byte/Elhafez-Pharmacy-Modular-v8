@@ -36,3 +36,4 @@ export class PostgresDatabase implements DbExecutor {
   async close(): Promise<void> {
     await this.pool.end();
   }
+}
