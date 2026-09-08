@@ -1,0 +1,5 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { auditEventHash } from '../src/modules/audit/domain/audit-chain.js';
+test('audit hash is deterministic and chained', () => { const a = auditEventHash({ tenantId: 't1', userId: 'u1', action: 'sale', entity: 'invoice', entityId: 's1', detail: { b: 2, a: 1 }, createdAt: '2026-09-08T00:00:00.000Z', prevHash: null }); const same = auditEventHash({ tenantId: 't1', userId: 'u1', action: 'sale', entity: 'invoice', entityId: 's1', detail: { a: 1, b: 2 }, createdAt: '2026-09-08T00:00:00.000Z', prevHash: null }); assert.equal(a, same); const b = auditEventHash({ tenantId: 't1', userId: 'u1', action: 'return', entity: 'invoice', entityId: 's1', createdAt: '2026-09-08T00:01:00.000Z', prevHash: a }); assert.notEqual(a, b); });
+test('audit chain hashes change when previous hash changes', () => { const base = { tenantId: 't', action: 'shift.opened', entity: 'cash_shift', entityId: 's', createdAt: '2026-09-08T00:00:00.000Z' }; assert.notEqual(auditEventHash({ ...base, prevHash: null }), auditEventHash({ ...base, prevHash: 'previous' })); });

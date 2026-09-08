@@ -1,0 +1,72 @@
+import { AppError } from '../../../core/errors/app-error.js';
+import { newId } from '../../../core/types/id.js';
+import { normalizeDrugMaster, parseActiveIngredients, parseBoolean } from '../domain/drug-master.js';
+export class DrugMasterService {
+    uow;
+    repo;
+    catalog;
+    audit;
+    constructor(uow, repo, catalog, audit) {
+        this.uow = uow;
+        this.repo = repo;
+        this.catalog = catalog;
+        this.audit = audit;
+    }
+    async importRows(tenantId, userId, rows) { if (!rows.length)
+        throw new AppError('DRUG_MASTER_IMPORT_EMPTY', 'ملف الاستيراد لا يحتوي بيانات', 422); if (rows.length > 100000)
+        throw new AppError('DRUG_MASTER_IMPORT_TOO_LARGE', 'عدد صفوف الاستيراد أكبر من الحد المسموح', 413); return this.uow.withTransaction(async (tx) => { let imported = 0, skipped = 0; const errors = []; for (let index = 0; index < rows.length; index++) {
+        try {
+            const d = normalizeDrugMaster(rows[index]);
+            const stable = d.gtin || d.barcode || `${d.nameAr}|${d.manufacturer ?? ''}|${d.strength ?? ''}`;
+            const id = `drug_${Buffer.from(stable).toString('base64url').slice(0, 80)}`;
+            await this.repo.upsert({ id, gtin: d.gtin, barcode: d.barcode, nameAr: d.nameAr, nameEn: d.nameEn, activeIngredients: d.activeIngredients, strength: d.strength, dosageForm: d.dosageForm, manufacturer: d.manufacturer, requiresPrescription: d.requiresPrescription, controlledClass: d.controlledClass, officialPrice: d.officialPrice, source: d.source, sourceUpdatedAt: d.sourceUpdatedAt }, tx);
+            imported++;
+        }
+        catch (e) {
+            skipped++;
+            if (errors.length < 50)
+                errors.push({ row: index + 1, message: e?.message ?? 'صف غير صالح' });
+        }
+    } await this.audit.record({ tenantId, userId, action: 'drug_master.imported', entity: 'drug_master', entityId: 'bulk', detail: { rows: rows.length, imported, skipped } }, tx); return { rows: rows.length, imported, skipped, errors }; }); }
+    async importCsv(tenantId, userId, csv) { return this.importRows(tenantId, userId, parseCsv(csv)); }
+    async adopt(tenantId, userId, masterId, input) { return this.uow.withTransaction(async (tx) => { const d = await this.repo.get(masterId, tx); if (!d)
+        throw new AppError('DRUG_MASTER_NOT_FOUND', 'الدواء المرجعي غير موجود', 404); if (d.barcode && await this.catalog.findByBarcode(tenantId, d.barcode, tx))
+        throw new AppError('PRODUCT_BARCODE_EXISTS', 'يوجد صنف بالفعل بنفس الباركود', 409); const sellingPrice = Number(input.sellingPrice ?? d.officialPrice ?? 0), costPrice = Number(input.costPrice ?? 0); if (sellingPrice < 0 || costPrice < 0)
+        throw new AppError('PRODUCT_PRICE_INVALID', 'السعر والتكلفة غير صحيحين', 422); const p = await this.catalog.create({ id: newId('prd'), tenantId, name: d.nameAr, barcode: d.barcode, sku: d.gtin, sellingPrice, costPrice, taxRate: Number(input.taxRate ?? 0), reorderLevel: Number(input.reorderLevel ?? 0), requiresPrescription: d.requiresPrescription, controlledClass: d.controlledClass, active: true }, tx); await this.audit.record({ tenantId, userId, action: 'drug_master.adopted', entity: 'product', entityId: p.id, detail: { masterId: d.id, name: d.nameAr } }, tx); return p; }); }
+}
+function parseCsv(text) { const rows = csvRows(text); if (rows.length < 2)
+    return []; const headers = rows[0].map(x => x.trim()); const out = []; for (const cells of rows.slice(1)) {
+    if (cells.every(x => !x.trim()))
+        continue;
+    const r = Object.fromEntries(headers.map((h, i) => [h, cells[i] ?? '']));
+    const active = String(r.activeIngredients ?? r.active ?? '');
+    out.push({ gtin: r.gtin || null, barcode: r.barcode || null, nameAr: String(r.nameAr ?? r.name ?? '').trim(), nameEn: r.nameEn || null, activeIngredients: parseActiveIngredients(active), strength: r.strength || null, dosageForm: r.dosageForm ?? r.form ?? null, manufacturer: r.manufacturer ?? r.company ?? null, requiresPrescription: parseBoolean(r.requiresPrescription ?? r.rx), controlledClass: r.controlledClass || null, officialPrice: r.officialPrice ? Number(r.officialPrice) : r.sellPrice ? Number(r.sellPrice) : null, source: r.source || 'csv', sourceUpdatedAt: r.sourceUpdatedAt || null });
+} return out; }
+function csvRows(text) { const out = []; let row = [], cell = '', quoted = false; for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+        if (c === '"' && text[i + 1] === '"') {
+            cell += '"';
+            i++;
+        }
+        else if (c === '"')
+            quoted = false;
+        else
+            cell += c;
+    }
+    else if (c === '"')
+        quoted = true;
+    else if (c === ',') {
+        row.push(cell);
+        cell = '';
+    }
+    else if (c === '\n') {
+        row.push(cell.replace(/\r$/, ''));
+        out.push(row);
+        row = [];
+        cell = '';
+    }
+    else
+        cell += c;
+} row.push(cell.replace(/\r$/, '')); if (row.length > 1 || row[0])
+    out.push(row); return out; }

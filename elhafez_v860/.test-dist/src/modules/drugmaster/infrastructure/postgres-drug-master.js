@@ -1,0 +1,12 @@
+const projection = `id,gtin,barcode,name_ar as "nameAr",name_en as "nameEn",active_ingredients as "activeIngredients",strength,dosage_form as "dosageForm",manufacturer,requires_prescription as "requiresPrescription",controlled_class as "controlledClass",official_price::float as "officialPrice",source,source_updated_at::text as "sourceUpdatedAt",updated_at::text as "updatedAt"`;
+export class PostgresDrugMasterRepository {
+    db;
+    constructor(db) {
+        this.db = db;
+    }
+    ex(tx) { return tx ?? this.db; }
+    async upsert(i, tx) { const q = await this.ex(tx).query(`INSERT INTO drug_master(id,gtin,barcode,name_ar,name_en,active_ingredients,strength,dosage_form,manufacturer,requires_prescription,controlled_class,official_price,source,source_updated_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT(id) DO UPDATE SET gtin=EXCLUDED.gtin,barcode=EXCLUDED.barcode,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,active_ingredients=EXCLUDED.active_ingredients,strength=EXCLUDED.strength,dosage_form=EXCLUDED.dosage_form,manufacturer=EXCLUDED.manufacturer,requires_prescription=EXCLUDED.requires_prescription,controlled_class=EXCLUDED.controlled_class,official_price=EXCLUDED.official_price,source=EXCLUDED.source,source_updated_at=EXCLUDED.source_updated_at,updated_at=now() RETURNING ${projection}`, [i.id, i.gtin, i.barcode, i.nameAr, i.nameEn, JSON.stringify(i.activeIngredients), i.strength, i.dosageForm, i.manufacturer, i.requiresPrescription, i.controlledClass, i.officialPrice, i.source, i.sourceUpdatedAt]); return q.rows[0]; }
+    async get(id, tx) { return (await this.ex(tx).query(`SELECT ${projection} FROM drug_master WHERE id=$1`, [id])).rows[0] ?? null; }
+    async search(query, limit = 50) { const x = query.trim().toLowerCase(), like = `%${x}%`; return (await this.db.query(`SELECT ${projection} FROM drug_master WHERE $1='' OR lower(name_ar) LIKE $2 OR lower(coalesce(name_en,'')) LIKE $2 OR lower(coalesce(barcode,'')) LIKE $2 OR lower(coalesce(gtin,'')) LIKE $2 OR lower(coalesce(manufacturer,'')) LIKE $2 OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(active_ingredients) a WHERE lower(a) LIKE $2) ORDER BY CASE WHEN lower(coalesce(barcode,''))=$1 OR lower(coalesce(gtin,''))=$1 THEN 0 WHEN lower(name_ar) LIKE $1||'%' THEN 1 ELSE 2 END,name_ar LIMIT $3`, [x, like, Math.min(200, Math.max(1, limit))])).rows; }
+    async count() { return Number((await this.db.query(`SELECT count(*)::text count FROM drug_master`)).rows[0]?.count ?? 0); }
+}

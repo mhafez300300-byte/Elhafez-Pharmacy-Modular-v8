@@ -1,0 +1,5 @@
+import { Router } from 'express';
+import { requirePermission } from '../../../core/http/require-permission.js';
+import { requireAuth } from '../../../core/http/require-auth.js';
+import { asyncHandler } from '../../../core/http/async-handler.js';
+export const auditRoutes = (audit) => { const r = Router(); r.use(requireAuth); r.get('/', requirePermission('audit.read'), asyncHandler(async (req, res) => res.json({ items: await audit.list(req.auth.tenantId, Number(req.query.limit || 200)) }))); r.get('/verify', requirePermission('audit.read'), asyncHandler(async (req, res) => res.json(await audit.verifyChain(req.auth.tenantId)))); return r; };

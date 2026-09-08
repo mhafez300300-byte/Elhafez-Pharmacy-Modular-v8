@@ -1,0 +1,26 @@
+import { Router } from 'express';
+import { asyncHandler } from '../../../core/http/async-handler.js';
+import { AppError } from '../../../core/errors/app-error.js';
+import { requireAuth } from '../../../core/http/require-auth.js';
+import { requirePermission } from '../../../core/http/require-permission.js';
+import { newId } from '../../../core/types/id.js';
+export function identityRoutes(auth, identity) {
+    const router = Router();
+    router.post('/login', asyncHandler(async (req, res) => { const username = String(req.body?.username ?? '').trim(), pin = String(req.body?.pin ?? '').trim(); if (!username || !pin)
+        throw new AppError('LOGIN_FIELDS_REQUIRED', 'اسم المستخدم وPIN مطلوبان', 422); const result = await auth.login(username, pin, String(req.headers['user-agent'] ?? 'متصفح').slice(0, 160)); res.cookie('elhafez_session', result.token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: result.maxAgeMs, path: '/' }); res.json({ user: result.user, expiresAt: result.expiresAt }); }));
+    router.post('/logout', asyncHandler(async (req, res) => { if (req.auth)
+        await auth.logout(req.auth.tenantId, req.auth.userId, req.auth.sessionId); res.clearCookie('elhafez_session', { path: '/' }); res.status(204).end(); }));
+    router.get('/me', requireAuth, asyncHandler(async (req, res) => { const user = await identity.findUser(req.auth.tenantId, req.auth.userId); if (!user)
+        throw new AppError('USER_NOT_FOUND', 'المستخدم غير موجود', 404); res.json({ user, sessionId: req.auth.sessionId }); }));
+    router.get('/sessions', requireAuth, asyncHandler(async (req, res) => res.json({ currentSessionId: req.auth.sessionId, items: await identity.listSessions(req.auth.tenantId, req.auth.userId) })));
+    router.post('/sessions/revoke-others', requireAuth, asyncHandler(async (req, res) => res.json({ revoked: await identity.revokeOtherSessions(req.auth.tenantId, req.auth.userId, req.auth.sessionId) })));
+    router.post('/sessions/:id/revoke', requireAuth, asyncHandler(async (req, res) => { if (req.params.id === req.auth.sessionId)
+        throw new AppError('SESSION_CURRENT_REVOKE_USE_LOGOUT', 'استخدم تسجيل الخروج لإنهاء الجلسة الحالية', 409); await identity.revokeSession(req.auth.tenantId, req.auth.userId, req.params.id); res.status(204).end(); }));
+    router.post('/pin', requireAuth, asyncHandler(async (req, res) => { const currentPin = String(req.body?.currentPin ?? ''), newPin = String(req.body?.newPin ?? ''); if (!/^\d{4,8}$/.test(newPin))
+        throw new AppError('PIN_INVALID', 'PIN الجديد يجب أن يكون من 4 إلى 8 أرقام', 422); await identity.changePin(req.auth.tenantId, req.auth.userId, currentPin, newPin); res.clearCookie('elhafez_session', { path: '/' }); res.status(204).end(); }));
+    router.get('/users', requireAuth, requirePermission('users.manage'), asyncHandler(async (req, res) => res.json({ items: await identity.listUsers(req.auth.tenantId) })));
+    router.post('/users', requireAuth, requirePermission('users.manage'), asyncHandler(async (req, res) => { const pin = String(req.body?.pin ?? ''); if (!/^\d{4,8}$/.test(pin))
+        throw new AppError('PIN_INVALID', 'PIN يجب أن يكون من 4 إلى 8 أرقام', 422); const name = String(req.body?.name ?? '').trim(), username = String(req.body?.username ?? '').trim(); if (name.length < 2 || username.length < 2)
+        throw new AppError('USER_FIELDS_REQUIRED', 'اسم المستخدم مطلوب', 422); res.status(201).json(await identity.createUser({ id: newId('usr'), tenantId: req.auth.tenantId, name, username, pin, role: String(req.body?.role ?? 'cashier'), permissions: Array.isArray(req.body?.permissions) ? req.body.permissions.map(String) : [], maxDiscountPercent: Number(req.body?.maxDiscountPercent ?? 0) })); }));
+    return router;
+}

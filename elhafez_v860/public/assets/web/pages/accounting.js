@@ -1,0 +1,49 @@
+import { api, post } from '../api/client.js';
+import { h, money, modal, toast } from '../components/dom.js';
+import { state } from '../state/store.js';
+const can = (p) => !!state.user && (state.user.permissions.includes('*') || state.user.permissions.includes(p));
+export async function accountingPage() {
+    const [journal, trial, income, balance, periods] = await Promise.all([
+        api('/api/accounting/journal'), api('/api/accounting/trial-balance'), api('/api/accounting/income-statement'), api('/api/accounting/balance-sheet'), api('/api/accounting/periods')
+    ]);
+    const root = h('div');
+    const actions = h('div', { class: 'section-actions' });
+    if (can('accounting.period.close'))
+        actions.append(h('button', { class: 'btn primary', onClick: () => openClosePeriod() }, 'إقفال فترة'));
+    root.append(h('div', { class: 'section-head' }, h('div', {}, h('h2', {}, 'المحاسبة'), h('p', {}, 'دليل حسابات • قيود مزدوجة • قوائم مالية • إقفال فترات')), actions));
+    root.append(h('div', { class: 'grid kpi' }, kpi('صافي الإيراد', income.netRevenue), kpi('مجمل الربح', income.grossProfit), kpi('صافي الربح', income.netIncome), kpi('إجمالي الأصول', balance.totalAssets)));
+    root.append(h('div', { class: 'grid two', style: 'margin-top:13px' }, incomeCard(income), balanceCard(balance)));
+    root.append(h('section', { class: 'card', style: 'margin-top:13px' }, h('h3', {}, 'ميزان المراجعة'), trialTable(trial.items ?? [])));
+    root.append(h('section', { class: 'card', style: 'margin-top:13px' }, h('h3', {}, 'الفترات المحاسبية'), periodTable(periods.items ?? [])));
+    root.append(h('section', { class: 'card', style: 'margin-top:13px' }, h('h3', {}, 'آخر القيود'), journalTable(journal.items ?? [])));
+    return root;
+}
+function kpi(label, value) { return h('div', { class: 'card kpi-card' }, h('small', {}, label), h('strong', {}, money(Number(value ?? 0))), h('em', {}, 'من القيود المرحلة')); }
+function incomeCard(d) { return h('section', { class: 'card' }, h('h3', {}, 'قائمة الدخل'), row('إيرادات المبيعات', d.revenue), row('(-) مردودات المبيعات', d.salesReturns), row('صافي الإيراد', d.netRevenue, true), row('(-) تكلفة البضاعة', d.costOfGoodsSold), row('مجمل الربح', d.grossProfit, true), row('(-) المصروفات', d.operatingExpenses), row('صافي الربح', d.netIncome, true)); }
+function balanceCard(d) { return h('section', { class: 'card' }, h('h3', {}, 'المركز المالي'), row('إجمالي الأصول', d.totalAssets, true), row('إجمالي الالتزامات', d.totalLiabilities), row('حقوق الملكية + نتيجة الفترة', d.totalEquity, true), h('div', { class: `auth-note${Math.abs(Number(d.totalAssets) - Number(d.totalLiabilities) - Number(d.totalEquity)) > .01 ? ' auth-error' : ''}` }, Math.abs(Number(d.totalAssets) - Number(d.totalLiabilities) - Number(d.totalEquity)) <= .01 ? 'المعادلة المحاسبية متوازنة' : 'تنبيه: المعادلة المحاسبية غير متوازنة — راجع أرصدة الافتتاح أو القيود.')); }
+function row(label, value, strong = false) { return h('div', { class: 'list-row' }, h(strong ? 'strong' : 'span', {}, label), h(strong ? 'strong' : 'span', {}, money(Number(value ?? 0)))); }
+function trialTable(items) { if (!items.length)
+    return h('div', { class: 'empty' }, 'لا توجد حركة بعد.'); const t = h('div', { class: 'table-wrap' }, h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...['الكود', 'الحساب', 'النوع', 'مدين', 'دائن', 'الرصيد'].map(x => h('th', {}, x)))), h('tbody'))); for (const x of items)
+    (t.querySelector('tbody')).append(h('tr', {}, h('td', {}, x.code), h('td', {}, x.nameAr), h('td', {}, accountType(x.type)), h('td', {}, money(x.debit)), h('td', {}, money(x.credit)), h('td', {}, money(x.balance)))); return t; }
+function periodTable(items) { if (!items.length)
+    return h('div', { class: 'empty' }, 'لم يتم إقفال أي فترة بعد.'); const t = h('div', { class: 'table-wrap' }, h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...['من', 'إلى', 'الحالة', 'الإجراء'].map(x => h('th', {}, x)))), h('tbody'))); for (const p of items) {
+    const action = p.status === 'closed' && can('accounting.period.reopen') ? h('button', { class: 'btn sm', onClick: async () => { if (!confirm('إعادة فتح الفترة ستسمح بالترحيل داخلها. متابعة؟'))
+            return; try {
+            await post(`/api/accounting/periods/${p.id}/reopen`, {});
+            toast('تم إعادة فتح الفترة');
+            location.reload();
+        }
+        catch (e) {
+            toast(e.message, true);
+        } } }, 'إعادة فتح') : h('span', { class: `tag ${p.status === 'closed' ? 'danger' : 'success'}` }, p.status === 'closed' ? 'مغلقة' : 'مفتوحة');
+    (t.querySelector('tbody')).append(h('tr', {}, h('td', {}, p.fromDate), h('td', {}, p.toDate), h('td', {}, p.status === 'closed' ? 'مغلقة' : 'مفتوحة'), h('td', {}, action)));
+} return t; }
+function journalTable(items) { if (!items.length)
+    return h('div', { class: 'empty' }, 'لا توجد قيود بعد.'); const t = h('div', { class: 'table-wrap' }, h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...['تاريخ القيد', 'البيان', 'المرجع', 'مدين', 'دائن'].map(x => h('th', {}, x)))), h('tbody'))); for (const e of items) {
+    const debit = e.lines.reduce((s, l) => s + Number(l.debit), 0), credit = e.lines.reduce((s, l) => s + Number(l.credit), 0);
+    (t.querySelector('tbody')).append(h('tr', {}, h('td', {}, e.postingDate ?? new Date(e.createdAt).toLocaleDateString('ar-EG')), h('td', {}, e.description), h('td', {}, referenceLabel(e.referenceType)), h('td', {}, money(debit)), h('td', {}, money(credit))));
+} return t; }
+function openClosePeriod() { const body = h('div', { class: 'form-grid' }, field('fromDate', 'من تاريخ', 'date'), field('toDate', 'إلى تاريخ', 'date'), h('div', { class: 'auth-note span-2' }, 'بعد الإقفال يمنع النظام أي قيد جديد بتاريخ داخل الفترة. إعادة الفتح تحتاج صلاحية مستقلة.')); modal('إقفال فترة محاسبية', body, async (form) => { const fd = new FormData(form); await post('/api/accounting/periods/close', { fromDate: fd.get('fromDate'), toDate: fd.get('toDate') }); toast('تم إقفال الفترة'); location.reload(); }); }
+function field(name, label, type = 'text') { return h('label', { class: 'field' }, h('span', {}, label), h('input', { name, type, required: true })); }
+function accountType(v) { return { asset: 'أصل', liability: 'التزام', equity: 'حقوق ملكية', revenue: 'إيراد', contra_revenue: 'مردودات/خصم إيراد', expense: 'مصروف', cogs: 'تكلفة بضاعة مباعة' }[v] ?? 'حساب'; }
+function referenceLabel(v) { return { sale: 'فاتورة بيع', sale_return: 'مرتجع بيع', purchase: 'فاتورة شراء', supplier_return: 'مرتجع مورد', expense: 'مصروف', receipt: 'سند قبض', payment: 'سند دفع', opening_balance: 'رصيد افتتاحي' }[v] ?? 'مستند مرتبط'; }

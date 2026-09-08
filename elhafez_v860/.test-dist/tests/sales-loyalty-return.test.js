@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { SalesService } from '../src/modules/sales/application/sales-service.js';
+const tx = { query: async () => ({ rows: [], rowCount: 0 }), client: {} };
+function postFixture() {
+    const saved = [];
+    const calls = [];
+    const uow = { withTransaction: async (fn) => fn(tx) };
+    const sales = { nextNumber: async () => 'S-000001', savePosted: async (s) => { saved.push(s); calls.push('sale'); }, get: async () => null, list: async () => [], saveReturn: async () => { }, returnedQuantities: async () => ({}), returnedAmount: async () => 0 };
+    const catalog = { get: async () => ({ id: 'p1', tenantId: 't', name: 'دواء', barcode: null, sku: null, sellingPrice: 100, costPrice: 60, taxRate: 0, reorderLevel: 0, requiresPrescription: false, active: true }) };
+    const inventory = { issueFefo: async () => [{ batchId: 'b1', quantity: 1, unitCost: 60, batchNo: 'B1', expiryDate: null }] };
+    const cash = { getOpenShift: async () => ({ id: 'sh1' }), recordMovement: async () => { } };
+    const accounting = { post: async () => { } };
+    const customers = { get: async () => ({ id: 'c1', active: true }) };
+    const audit = { record: async () => { } };
+    const settlements = { createObligation: async () => { } };
+    const identity = { findUser: async () => ({ id: 'u', tenantId: 't', name: 'User', username: 'u', role: 'cashier', permissions: ['sales.post', 'loyalty.redeem'], maxDiscountPercent: 100, active: true }) };
+    const clinical = { safetyCheck: async () => ({ blocked: false, warnings: [] }), getPrescription: async () => null };
+    const pricing = { calculateDiscount: async () => ({ amount: 0, offerId: null }) };
+    const loyalty = { redeemForSale: async (i, _tx) => { calls.push('redeem'); assert.equal(i.requestedPoints, 100); return { requestedPoints: 100, approvedPoints: 100, availablePoints: 1000, maxPointsBySale: 200, discount: 10, pointValue: .1, minRedeemPoints: 10, maxRedeemPercent: 20 }; }, earnForAmount: async (i, _tx) => { calls.push('earn'); assert.equal(i.amount, 90); return 90; }, reverseForReturn: async () => ({ restoredRedeemedPoints: 0, reversedEarnedPoints: 0 }) };
+    const idempotency = { claim: async () => ({ state: 'new' }), complete: async () => { } };
+    return { saved, calls, service: new SalesService(uow, sales, catalog, inventory, cash, accounting, customers, audit, settlements, identity, clinical, pricing, loyalty, idempotency) };
+}
+test('sale redeems loyalty atomically and earns on the actually paid amount', async () => {
+    const f = postFixture();
+    const sale = await f.service.post('t', 'u', { branchId: 'b', customerId: 'c1', payment: 'cash', loyaltyPointsToRedeem: 100, lines: [{ productId: 'p1', quantity: 1 }] });
+    assert.equal(sale.loyaltyDiscount, 10);
+    assert.equal(sale.loyaltyPointsRedeemed, 100);
+    assert.equal(sale.loyaltyPointsEarned, 90);
+    assert.equal(sale.total, 90);
+    assert.deepEqual(f.calls, ['redeem', 'earn', 'sale']);
+});
+test('full return refunds the paid amount after invoice and loyalty discounts and reverses loyalty proportionally', async () => {
+    let savedReturn = null, reverseInput = null;
+    const sale = { id: 's1', number: 'S-1', tenantId: 't', branchId: 'b', customerId: 'c1', userId: 'u', payment: 'cash', subtotal: 100, discount: 20, invoiceDiscount: 10, loyaltyPointsRedeemed: 100, loyaltyDiscount: 10, loyaltyPointsEarned: 80, tax: 0, total: 80, cost: 60, profit: 20, status: 'posted', createdAt: new Date().toISOString(), lines: [{ id: 'l1', productId: 'p1', quantity: 1, unitPrice: 100, discount: 0, tax: 0, net: 100, cost: 60, allocations: [{ batchId: 'bt1', quantity: 1, unitCost: 60 }] }] };
+    const uow = { withTransaction: async (fn) => fn(tx) };
+    const sales = { get: async () => sale, returnedQuantities: async () => ({}), returnedAmount: async () => 0, saveReturn: async (i) => { savedReturn = i; } };
+    const inventory = { returnStock: async () => { } };
+    const cash = { getOpenShift: async () => ({ id: 'sh' }), recordMovement: async () => { } };
+    const accounting = { post: async () => { } };
+    const audit = { record: async () => { } };
+    const loyalty = { reverseForReturn: async (i) => { reverseInput = i; return { restoredRedeemedPoints: 100, reversedEarnedPoints: 80 }; } };
+    const idempotency = { claim: async () => ({ state: 'new' }), complete: async () => { } };
+    const service = new SalesService(uow, sales, {}, inventory, cash, accounting, {}, audit, {}, {}, {}, {}, loyalty, idempotency);
+    const result = await service.returnSale('t', 'u', { saleId: 's1', lines: [{ saleLineId: 'l1', quantity: 1, classification: 'sellable' }] });
+    assert.equal(result.total, 80);
+    assert.equal(savedReturn.total, 80);
+    assert.equal(savedReturn.lines[0].amount, 80);
+    assert.equal(reverseInput.proportion, 1);
+    assert.equal(reverseInput.earnedPoints, 80);
+    assert.equal(reverseInput.redeemedPoints, 100);
+});

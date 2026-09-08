@@ -1,0 +1,40 @@
+import { AppError } from '../../../core/errors/app-error.js';
+import { validateJournal } from '../domain/journal.js';
+import { DEFAULT_CHART, assertPeriodRange } from '../domain/chart.js';
+export class PostgresAccountingRepository {
+    db;
+    constructor(db) {
+        this.db = db;
+    }
+    ex(tx) { return tx ?? this.db; }
+    async ensureDefaultChart(tenantId, tx) { const ex = this.ex(tx); for (const a of DEFAULT_CHART)
+        await ex.query(`INSERT INTO acc_accounts(tenant_id,code,name_ar,type,normal_side,active) VALUES($1,$2,$3,$4,$5,true) ON CONFLICT(tenant_id,code) DO NOTHING`, [tenantId, a.code, a.nameAr, a.type, a.normalSide]); }
+    async post(i, tx) {
+        validateJournal(i.lines);
+        await this.ensureDefaultChart(i.tenantId, tx);
+        const postingDate = i.postingDate ?? new Date().toISOString().slice(0, 10);
+        const closed = await tx.query(`SELECT id,from_date,to_date FROM acc_periods WHERE tenant_id=$1 AND status='closed' AND $2::date BETWEEN from_date AND to_date LIMIT 1`, [i.tenantId, postingDate]);
+        if (closed.rowCount)
+            throw new AppError('ACCOUNTING_PERIOD_CLOSED', 'لا يمكن ترحيل قيد داخل فترة محاسبية مغلقة', 409, { period: closed.rows[0] });
+        const codes = [...new Set(i.lines.map(x => x.accountCode))];
+        const hit = await tx.query(`SELECT code FROM acc_accounts WHERE tenant_id=$1 AND active=true AND code=ANY($2::text[])`, [i.tenantId, codes]);
+        const valid = new Set(hit.rows.map(x => x.code)), missing = codes.filter(x => !valid.has(x));
+        if (missing.length)
+            throw new AppError('ACCOUNT_NOT_FOUND', 'القيد يحتوي حساباً غير موجود في دليل الحسابات', 422, { missing });
+        await tx.query(`INSERT INTO acc_journal_entries(id,tenant_id,branch_id,reference_type,reference_id,description,status,posting_date) VALUES($1,$2,$3,$4,$5,$6,'posted',$7::date)`, [i.id, i.tenantId, i.branchId, i.referenceType, i.referenceId, i.description, postingDate]);
+        for (const [idx, l] of i.lines.entries())
+            await tx.query(`INSERT INTO acc_journal_lines(entry_id,line_no,account_code,debit,credit,memo) VALUES($1,$2,$3,$4,$5,$6)`, [i.id, idx + 1, l.accountCode, l.debit, l.credit, l.memo ?? null]);
+    }
+    async listEntries(t, limit = 200) { return (await this.db.query(`SELECT e.id,e.branch_id as "branchId",e.reference_type as "referenceType",e.reference_id as "referenceId",e.description,e.posting_date::text as "postingDate",e.created_at as "createdAt",json_agg(json_build_object('accountCode',l.account_code,'debit',l.debit::float,'credit',l.credit::float,'memo',l.memo) ORDER BY l.line_no) lines FROM acc_journal_entries e JOIN acc_journal_lines l ON l.entry_id=e.id WHERE e.tenant_id=$1 GROUP BY e.id ORDER BY e.posting_date DESC,e.created_at DESC LIMIT $2`, [t, Math.min(1000, limit)])).rows; }
+    async hasReference(t, referenceType, referenceId) { const q = await this.db.query(`SELECT 1 FROM acc_journal_entries WHERE tenant_id=$1 AND reference_type=$2 AND reference_id=$3 LIMIT 1`, [t, referenceType, referenceId]); return Number(q.rowCount ?? 0) > 0; }
+    async listAccounts(t) { await this.ensureDefaultChart(t); return (await this.db.query(`SELECT code,name_ar as "nameAr",type,normal_side as "normalSide",active FROM acc_accounts WHERE tenant_id=$1 ORDER BY code`, [t])).rows; }
+    dateFilter(alias, fromDate, toDate) { return { sql: `($2::date IS NULL OR ${alias}.posting_date >= $2::date) AND ($3::date IS NULL OR ${alias}.posting_date <= $3::date)`, params: [fromDate ?? null, toDate ?? null] }; }
+    async trialBalance(t, fromDate, toDate) { await this.ensureDefaultChart(t); const f = this.dateFilter('e', fromDate, toDate); const q = await this.db.query(`SELECT a.code,a.name_ar as "nameAr",a.type,a.normal_side as "normalSide",COALESCE(sum(l.debit),0)::float debit,COALESCE(sum(l.credit),0)::float credit,(COALESCE(sum(l.debit),0)-COALESCE(sum(l.credit),0))::float balance FROM acc_accounts a LEFT JOIN acc_journal_lines l ON l.account_code=a.code LEFT JOIN acc_journal_entries e ON e.id=l.entry_id AND e.tenant_id=a.tenant_id AND ${f.sql} WHERE a.tenant_id=$1 GROUP BY a.code,a.name_ar,a.type,a.normal_side ORDER BY a.code`, [t, ...f.params]); const items = q.rows; return { fromDate: fromDate ?? null, toDate: toDate ?? null, items, totalDebit: items.reduce((s, x) => s + Number(x.debit), 0), totalCredit: items.reduce((s, x) => s + Number(x.credit), 0) }; }
+    async incomeStatement(t, fromDate, toDate) { const tb = await this.trialBalance(t, fromDate, toDate); const by = (types) => tb.items.filter((x) => types.includes(x.type)); const revenues = by(['revenue']), returns = by(['contra_revenue']), cogs = by(['cogs']), expenses = by(['expense']); const creditBalance = (x) => Number(x.credit) - Number(x.debit), debitBalance = (x) => Number(x.debit) - Number(x.credit); const revenue = revenues.reduce((s, x) => s + creditBalance(x), 0), salesReturns = returns.reduce((s, x) => s + debitBalance(x), 0), costOfGoodsSold = cogs.reduce((s, x) => s + debitBalance(x), 0), operatingExpenses = expenses.reduce((s, x) => s + debitBalance(x), 0), netRevenue = revenue - salesReturns, grossProfit = netRevenue - costOfGoodsSold, netIncome = grossProfit - operatingExpenses; return { fromDate: fromDate ?? null, toDate: toDate ?? null, revenue, salesReturns, netRevenue, costOfGoodsSold, grossProfit, operatingExpenses, netIncome }; }
+    async balanceSheet(t, atDate) { const tb = await this.trialBalance(t, undefined, atDate); const debit = (x) => Number(x.debit) - Number(x.credit), credit = (x) => Number(x.credit) - Number(x.debit); const assets = tb.items.filter((x) => x.type === 'asset').map((x) => ({ ...x, amount: debit(x) })), liabilities = tb.items.filter((x) => x.type === 'liability').map((x) => ({ ...x, amount: credit(x) })), equity = tb.items.filter((x) => x.type === 'equity').map((x) => ({ ...x, amount: credit(x) })); const currentIncome = await this.incomeStatement(t, undefined, atDate); return { atDate: atDate ?? null, assets, liabilities, equity, currentEarnings: currentIncome.netIncome, totalAssets: assets.reduce((s, x) => s + x.amount, 0), totalLiabilities: liabilities.reduce((s, x) => s + x.amount, 0), totalEquity: equity.reduce((s, x) => s + x.amount, 0) + currentIncome.netIncome }; }
+    async listPeriods(t) { return (await this.db.query(`SELECT id,from_date::text as "fromDate",to_date::text as "toDate",status,closed_by as "closedBy",closed_at::text as "closedAt",reopened_by as "reopenedBy",reopened_at::text as "reopenedAt" FROM acc_periods WHERE tenant_id=$1 ORDER BY from_date DESC`, [t])).rows; }
+    async closePeriod(i, tx) { assertPeriodRange(i.fromDate, i.toDate); const ex = this.ex(tx); const overlap = await ex.query(`SELECT id FROM acc_periods WHERE tenant_id=$1 AND status='closed' AND daterange(from_date,to_date,'[]') && daterange($2::date,$3::date,'[]') LIMIT 1`, [i.tenantId, i.fromDate, i.toDate]); if (overlap.rowCount)
+        throw new AppError('ACCOUNTING_PERIOD_OVERLAP', 'توجد فترة محاسبية مغلقة متداخلة', 409); const q = await ex.query(`INSERT INTO acc_periods(id,tenant_id,from_date,to_date,status,closed_by,closed_at) VALUES($1,$2,$3::date,$4::date,'closed',$5,now()) RETURNING id,from_date::text as "fromDate",to_date::text as "toDate",status,closed_by as "closedBy",closed_at::text as "closedAt",reopened_by as "reopenedBy",reopened_at::text as "reopenedAt"`, [i.id, i.tenantId, i.fromDate, i.toDate, i.userId]); return q.rows[0]; }
+    async reopenPeriod(i, tx) { const q = await this.ex(tx).query(`UPDATE acc_periods SET status='open',reopened_by=$3,reopened_at=now() WHERE tenant_id=$1 AND id=$2 AND status='closed' RETURNING id,from_date::text as "fromDate",to_date::text as "toDate",status,closed_by as "closedBy",closed_at::text as "closedAt",reopened_by as "reopenedBy",reopened_at::text as "reopenedAt"`, [i.tenantId, i.periodId, i.userId]); if (!q.rowCount)
+        throw new AppError('ACCOUNTING_PERIOD_NOT_FOUND', 'الفترة المحاسبية المغلقة غير موجودة', 404); return q.rows[0]; }
+}

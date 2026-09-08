@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { BackupService } from '../src/modules/backup/application/backup-service.js';
+import { AppError } from '../src/core/errors/app-error.js';
+const tx = { query: async () => ({ rows: [], rowCount: 0 }), client: {} };
+const payload = { format: 'ELHAFEZ_PHARMACY_DB_SNAPSHOT', version: 1, appVersion: '8.2.0', createdAt: '2026-09-08T00:00:00.000Z', tables: [{ name: 'org_tenants', rows: [{ id: 't1', name: 'صيدلية' }] }, { name: 'id_users', rows: [{ id: 'u1', tenant_id: 't1' }] }, { name: 'sys_settings', rows: [{ tenant_id: 't1' }] }] };
+function fixture() { let restored = null; const repo = { exportSnapshot: async () => payload, restoreSnapshot: async (p) => { restored = p; } }; const audit = { record: async () => { } }; const uow = { withTransaction: async (fn) => fn(tx) }; return { service: new BackupService(uow, repo, audit, 'backup-secret-abcdefghijklmnopqrstuvwxyz-123456'), get: () => restored }; }
+test('backup encryption round-trips without exposing plaintext', async () => { const { service } = fixture(); const env = await service.exportEncrypted('t1', 'u1'); assert.equal(env.format, 'ELHAFEZ_PHARMACY_BACKUP'); assert.ok(!env.data.includes('صيدلية')); assert.deepEqual(service.decrypt(env), payload); });
+test('tampered backup is rejected', async () => { const { service } = fixture(); const env = await service.exportEncrypted('t1', 'u1'); await assert.rejects(async () => service.decrypt({ ...env, data: env.data.slice(0, -2) + 'aa' }), AppError); });
+test('backup verify is a non-destructive recovery drill', async () => { const { service, get } = fixture(); const env = await service.exportEncrypted('t1', 'u1'), inspection = service.inspectEncrypted('t1', env); assert.equal(inspection.tenantMatch, true); assert.equal(inspection.requiredTablesPresent, true); assert.equal(inspection.rows, 3); assert.equal(get(), null); });
+test('restore requires exact confirmation and tenant match', async () => { const { service, get } = fixture(); const env = await service.exportEncrypted('t1', 'u1'); await assert.rejects(() => service.restoreEncrypted('t1', 'u1', env, 'NO'), /تأكيد/); const out = await service.restoreEncrypted('t1', 'u1', env, 'RESTORE ELHAFEZ PHARMACY'); assert.equal(out.tables, 3); assert.deepEqual(get(), payload); });

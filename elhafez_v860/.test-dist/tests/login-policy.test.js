@@ -1,0 +1,4 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { loginIsBlocked, LOGIN_MAX_FAILURES, LOGIN_BLOCK_MINUTES } from '../src/modules/identity/domain/login-policy.js';
+test('login policy uses a five-attempt lockout with a finite block window', () => { assert.equal(LOGIN_MAX_FAILURES, 5); assert.equal(LOGIN_BLOCK_MINUTES, 15); assert.equal(loginIsBlocked(new Date(Date.now() + 60_000).toISOString()), true); assert.equal(loginIsBlocked(new Date(Date.now() - 60_000).toISOString()), false); });

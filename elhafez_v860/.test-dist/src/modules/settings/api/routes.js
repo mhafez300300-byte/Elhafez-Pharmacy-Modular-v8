@@ -1,0 +1,32 @@
+import { Router } from 'express';
+import { requirePermission } from '../../../core/http/require-permission.js';
+import { requireAuth } from '../../../core/http/require-auth.js';
+import { asyncHandler } from '../../../core/http/async-handler.js';
+import { defaultSettingsPreferences } from '../contracts/settings-contract.js';
+const bool = (v, d) => v === undefined ? d : v === true || v === 'true';
+const num = (v, d, min, max) => { const n = Number(v); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : d; };
+const str = (v, d, max = 500) => v === undefined ? d : String(v ?? '').slice(0, max);
+const one = (v, values, d) => values.includes(v) ? v : d;
+const color = (v, d) => /^#[0-9a-f]{6}$/i.test(String(v ?? '')) ? String(v) : d;
+export const settingsRoutes = (s) => {
+    const r = Router();
+    r.use(requireAuth);
+    r.get('/', requirePermission('settings.read'), asyncHandler(async (req, res) => res.json(await s.get(req.auth.tenantId))));
+    r.put('/', requirePermission('settings.manage'), asyncHandler(async (req, res) => {
+        const old = await s.get(req.auth.tenantId), p = req.body?.preferences ?? {}, base = old?.preferences ?? defaultSettingsPreferences;
+        const preferences = {
+            defaultPaymentMethod: one(p.defaultPaymentMethod, ['cash', 'card', 'credit'], base.defaultPaymentMethod), showProfitInPos: bool(p.showProfitInPos, base.showProfitInPos), autoFocusPosSearch: bool(p.autoFocusPosSearch, base.autoFocusPosSearch), confirmBeforeSale: bool(p.confirmBeforeSale, base.confirmBeforeSale),
+            reorderSuggestionsEnabled: bool(p.reorderSuggestionsEnabled, base.reorderSuggestionsEnabled), lowStockCoverageDays: num(p.lowStockCoverageDays, base.lowStockCoverageDays, 1, 120), expiryWarningDays: num(p.expiryWarningDays, base.expiryWarningDays, 7, 730), reorderSafetyDays: num(p.reorderSafetyDays, base.reorderSafetyDays, 0, 60),
+            paperSize: one(p.paperSize, ['A4', '80mm', '58mm'], base.paperSize), dailyBriefEnabled: bool(p.dailyBriefEnabled, base.dailyBriefEnabled), notifyLowStock: bool(p.notifyLowStock, base.notifyLowStock), notifyExpiry: bool(p.notifyExpiry, base.notifyExpiry), compactNavigation: bool(p.compactNavigation, base.compactNavigation),
+            appearance: one(p.appearance, ['light', 'comfort', 'dark'], base.appearance), accentColor: color(p.accentColor, base.accentColor), sidebarMode: one(p.sidebarMode, ['fixed', 'auto', 'hidden'], base.sidebarMode), animations: bool(p.animations, base.animations), fontFamily: one(p.fontFamily, ['cairo', 'tajawal', 'almarai', 'noto', 'plex'], base.fontFamily), fontScale: num(p.fontScale, base.fontScale, .8, 1.35),
+            receiptBusinessName: str(p.receiptBusinessName, base.receiptBusinessName, 160), receiptPhone: str(p.receiptPhone, base.receiptPhone, 80), receiptAddress: str(p.receiptAddress, base.receiptAddress, 300), receiptTaxNumber: str(p.receiptTaxNumber, base.receiptTaxNumber, 100), receiptCommercialRegister: str(p.receiptCommercialRegister, base.receiptCommercialRegister, 100), receiptExtraInfo: str(p.receiptExtraInfo, base.receiptExtraInfo, 400), receiptLogoData: str(p.receiptLogoData, base.receiptLogoData, 900000),
+            receiptShowPhone: bool(p.receiptShowPhone, base.receiptShowPhone), receiptShowAddress: bool(p.receiptShowAddress, base.receiptShowAddress), receiptShowTaxNumber: bool(p.receiptShowTaxNumber, base.receiptShowTaxNumber), receiptShowCommercialRegister: bool(p.receiptShowCommercialRegister, base.receiptShowCommercialRegister),
+            loyaltyEarnEvery: num(p.loyaltyEarnEvery, base.loyaltyEarnEvery, .01, 1000000), loyaltyRedeemValue: num(p.loyaltyRedeemValue, base.loyaltyRedeemValue, 0, 1000000), requireOpenShift: bool(p.requireOpenShift, base.requireOpenShift), blindShiftClose: bool(p.blindShiftClose, base.blindShiftClose), shiftVarianceTolerance: num(p.shiftVarianceTolerance, base.shiftVarianceTolerance, 0, 1000000),
+            deviceName: str(p.deviceName, base.deviceName, 80), receiptWidth: one(p.receiptWidth, ['80', '58'], base.receiptWidth), taxIntegrationMode: one(p.taxIntegrationMode, ['disabled', 'ready'], base.taxIntegrationMode),
+            shortageNotebookEnabled: bool(p.shortageNotebookEnabled, base.shortageNotebookEnabled), customerRequestCaptureEnabled: bool(p.customerRequestCaptureEnabled, base.customerRequestCaptureEnabled), autoCreateShortageFromPos: bool(p.autoCreateShortageFromPos, base.autoCreateShortageFromPos),
+            insuranceEnabled: bool(p.insuranceEnabled, base.insuranceEnabled), insuranceDefaultCoveragePercent: num(p.insuranceDefaultCoveragePercent, base.insuranceDefaultCoveragePercent, 0, 100), claimsAutoDraft: bool(p.claimsAutoDraft, base.claimsAutoDraft), trackTraceEnabled: bool(p.trackTraceEnabled, base.trackTraceEnabled), trackTraceAutoSales: bool(p.trackTraceAutoSales, base.trackTraceAutoSales), traceRequireBatchNo: bool(p.traceRequireBatchNo, base.traceRequireBatchNo),
+        };
+        res.json(await s.save({ tenantId: req.auth.tenantId, pharmacyName: String(req.body?.pharmacyName ?? old?.pharmacyName ?? '').trim(), phone: req.body?.phone ? String(req.body.phone) : null, address: req.body?.address ? String(req.body.address) : null, email: req.body?.email ? String(req.body.email) : null, whatsapp: req.body?.whatsapp ? String(req.body.whatsapp) : null, taxNumber: req.body?.taxNumber ? String(req.body.taxNumber) : null, commercialRegistration: req.body?.commercialRegistration ? String(req.body.commercialRegistration) : null, invoiceFooter: req.body?.invoiceFooter ? String(req.body.invoiceFooter) : null, preferences }));
+    }));
+    return r;
+};

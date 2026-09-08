@@ -1,0 +1,5 @@
+import { Router } from 'express';
+import { requireAuth } from '../../../core/http/require-auth.js';
+import { requirePermission } from '../../../core/http/require-permission.js';
+import { asyncHandler } from '../../../core/http/async-handler.js';
+export const backupRoutes = (service) => { const r = Router(); r.use(requireAuth, requirePermission('backup.manage')); r.get('/export', asyncHandler(async (req, res) => { const envelope = await service.exportEncrypted(req.auth.tenantId, req.auth.userId), stamp = new Date().toISOString().replaceAll(':', '-').replace(/\.\d{3}Z$/, 'Z'); res.setHeader('content-type', 'application/vnd.elhafez.pharmacy-backup+json; charset=utf-8'); res.setHeader('content-disposition', `attachment; filename="Elhafez-Pharmacy-${stamp}.ehpbackup"`); res.send(JSON.stringify(envelope)); })); r.post('/verify', asyncHandler(async (req, res) => res.json(service.inspectEncrypted(req.auth.tenantId, req.body?.backup)))); r.post('/restore', asyncHandler(async (req, res) => res.json(await service.restoreEncrypted(req.auth.tenantId, req.auth.userId, req.body?.backup, String(req.body?.confirmation ?? ''))))); return r; };
