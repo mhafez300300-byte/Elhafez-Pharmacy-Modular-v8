@@ -1,10 +1,9 @@
 FROM node:22-alpine AS build
 WORKDIR /app
-RUN apk add --no-cache unzip
 COPY package.json ./
 RUN npm install --no-audit --no-fund
 COPY . .
-RUN unzip -o deploy-patch.zip -d /app && npm run build:server
+RUN npm run build
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
