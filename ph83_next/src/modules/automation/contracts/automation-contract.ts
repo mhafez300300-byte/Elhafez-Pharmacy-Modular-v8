@@ -1,0 +1,1 @@
+export type AutomationSnapshot=Readonly<{enabled:boolean;reorderEnabled:boolean;traceSalesEnabled:boolean;dailyBriefEnabled:boolean;shortageCaptureEnabled:boolean;recommendedPurchaseLines:number;criticalPurchaseLines:number;generatedAt:string}>;
