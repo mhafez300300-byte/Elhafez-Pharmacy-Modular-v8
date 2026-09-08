@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{readFile}from'node:fs/promises';
+test('DOM helper does not blindly assign arbitrary DOM properties such as read-only form',async()=>{const s=await readFile('web/src/components/dom.ts','utf8');assert.equal(s.includes("else if(k in el)"),false);assert.match(s,/PROPERTY_ONLY/);assert.match(s,/setAttribute\(attrName\(k\)/);});
+test('modal save and POS shortage save guard against double submit',async()=>{const dom=await readFile('web/src/components/dom.ts','utf8'),pos=await readFile('web/src/pages/pos.ts','utf8');assert.match(dom,/if\(save\.disabled\)return/);assert.match(pos,/if\(save\.disabled\)return;save\.disabled=true/);});

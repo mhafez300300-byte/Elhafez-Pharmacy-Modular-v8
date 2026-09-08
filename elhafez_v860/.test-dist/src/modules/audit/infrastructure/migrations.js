@@ -1,4 +1,0 @@
-export const auditMigrations = [
-    { id: '003_audit', sql: `CREATE TABLE audit_events(id bigserial PRIMARY KEY,tenant_id text NOT NULL REFERENCES org_tenants(id) ON DELETE CASCADE,user_id text NULL,action text NOT NULL,entity text NOT NULL,entity_id text NULL,detail jsonb NOT NULL DEFAULT '{}'::jsonb,created_at timestamptz NOT NULL DEFAULT now());CREATE INDEX audit_events_tenant_time_idx ON audit_events(tenant_id,created_at DESC);` },
-    { id: '029_audit_integrity', sql: `ALTER TABLE audit_events ADD COLUMN prev_hash text NULL,ADD COLUMN event_hash text NULL;CREATE TABLE audit_heads(tenant_id text PRIMARY KEY REFERENCES org_tenants(id) ON DELETE CASCADE,last_event_id bigint NULL,last_hash text NULL,updated_at timestamptz NOT NULL DEFAULT now());CREATE INDEX audit_events_hash_idx ON audit_events(tenant_id,id) WHERE event_hash IS NOT NULL;` }
-];
