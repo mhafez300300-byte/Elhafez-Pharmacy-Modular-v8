@@ -28,7 +28,7 @@ export class PostgresBackupRepository implements BackupContract {
       const rows=(await this.db.query<Record<string,unknown>>(`SELECT * FROM ${qi(name)}`)).rows;
       tables.push({name,rows});
     }
-    return {format:'ELHAFEZ_PHARMACY_DB_SNAPSHOT',version:1,appVersion:'8.0.0',createdAt:new Date().toISOString(),tables};
+    return {format:'ELHAFEZ_PHARMACY_DB_SNAPSHOT',version:1,appVersion:'8.1.0',createdAt:new Date().toISOString(),tables};
   }
 
   async restoreSnapshot(snapshot: BackupPayload, tx: DbTx): Promise<void> {

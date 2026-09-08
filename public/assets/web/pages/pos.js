@@ -18,8 +18,11 @@ export async function posPage() {
     cartCard.append(h('h3', {}, 'الفاتورة الحالية'), cartBox, h('div', { class: 'form-grid', style: 'margin-top:12px' }, label('العميل', customer), label('الدفع', payment), rxField, label('خصم الفاتورة', invoiceDiscount), loyaltyField, creditField), totals, profitHint, submit);
     layout.append(productsCard, cartCard);
     root.append(head, layout);
-    const data = await api('/api/products?limit=100');
-    products = data.items;
+    const [data, balancesData, appSettings] = await Promise.all([api('/api/products?limit=100'), api(`/api/inventory/balances?branchId=${encodeURIComponent(state.branch?.id ?? '')}`).catch(() => ({ items: [] })), api('/api/settings').catch(() => ({ preferences: {} }))]);
+    const posPrefs = appSettings?.preferences ?? {};
+    payment.value = ['cash', 'card', 'credit'].includes(posPrefs.defaultPaymentMethod) ? posPrefs.defaultPaymentMethod : 'cash';
+    const balanceMap = new Map((balancesData.items ?? []).map((x) => [x.productId, x]));
+    products = data.items.map((p) => ({ ...p, stock: Number(balanceMap.get(p.id)?.quantity ?? 0), nearestExpiry: balanceMap.get(p.id)?.nearestExpiry ?? null }));
     customers = (await api('/api/customers')).items;
     prescriptions = (await api('/api/clinical/sale-prescriptions').catch(() => ({ items: [] }))).items;
     for (const c of customers)
@@ -30,11 +33,12 @@ export async function posPage() {
         line.quantity++;
     else
         cart.push({ product: p, quantity: 1 }); renderCart(); };
-    function renderProducts() { grid.replaceChildren(...products.slice(0, 60).map(p => h('button', { class: 'product-tile', onClick: () => add(p) }, h('b', {}, p.name), h('small', {}, p.barcode ?? 'بدون باركود'), h('div', { class: 'tile-meta' }, h('strong', {}, money(p.sellingPrice)), p.requiresPrescription ? h('span', { class: 'tag warning' }, 'Rx') : null)))); if (!products.length)
+    function renderProducts() { grid.replaceChildren(...products.slice(0, 60).map(p => h('button', { class: `product-tile ${Number(p.stock ?? 0) <= 0 ? 'out' : ''}`, disabled: Number(p.stock ?? 0) <= 0, onClick: () => add(p) }, h('b', {}, p.name), h('small', {}, p.barcode ?? 'بدون باركود'), h('span', { class: 'stock-hint' }, `الرصيد ${Number(p.stock ?? 0).toLocaleString('ar-EG')}${p.nearestExpiry ? ' • صلاحية ' + new Date(p.nearestExpiry).toLocaleDateString('ar-EG') : ''}`), h('div', { class: 'tile-meta' }, h('strong', {}, money(p.sellingPrice)), p.requiresPrescription ? h('span', { class: 'tag warning' }, 'Rx') : null)))); if (!products.length)
         grid.replaceChildren(h('div', { class: 'empty' }, 'لا توجد نتائج')); }
     async function searchServer(q) { try {
-        const r = await api(`/api/products?q=${encodeURIComponent(q)}&limit=60`);
-        products = r.items;
+        const [r, b] = await Promise.all([api(`/api/products?q=${encodeURIComponent(q)}&limit=60`), api(`/api/inventory/balances?branchId=${encodeURIComponent(state.branch?.id ?? '')}`).catch(() => ({ items: [] }))]);
+        const bm = new Map((b.items ?? []).map((x) => [x.productId, x]));
+        products = r.items.map((p) => ({ ...p, stock: Number(bm.get(p.id)?.quantity ?? 0), nearestExpiry: bm.get(p.id)?.nearestExpiry ?? null }));
         renderProducts();
         return products;
     }
@@ -47,7 +51,7 @@ export async function posPage() {
         prescription.value = ''; totals.replaceChildren(row('قبل الضريبة', money(subtotal)), row('الضريبة', money(tax)), row('خصم يدوي', money(discount)), ...(loyaltyDiscount > 0 ? [row('خصم نقاط تقريبي', money(loyaltyDiscount))] : []), h('div', { class: 'total-row grand' }, h('span', {}, 'الإجمالي التقريبي'), h('span', {}, money(total)))); if (loyalty) {
         const hint = loyalty.enabled ? `الرصيد: ${Math.floor(loyalty.points)} نقطة • قيمة النقطة ${money(loyalty.pointValue)} • حد أدنى ${loyalty.minRedeemPoints} • أقصى ${loyalty.maxRedeemPercent}%` : 'برنامج الولاء متوقف';
         loyaltyInfo.textContent = hint;
-    } const hasCosts = cart.length > 0 && cart.every(l => typeof l.product.costPrice === 'number'); if (canProfit && hasCosts) {
+    } const hasCosts = cart.length > 0 && cart.every(l => typeof l.product.costPrice === 'number'); if (canProfit && posPrefs.showProfitInPos !== false && hasCosts) {
         const cost = cart.reduce((s, l) => s + Number(l.product.costPrice) * l.quantity, 0), margin = Math.max(0, subtotal - discount - loyaltyDiscount - cost);
         profitHint.style.display = 'block';
         profitHint.textContent = `هامش تقريبي: ${money(margin)} — المرجع النهائي هو الفاتورة المعتمدة.`;
@@ -122,7 +126,8 @@ export async function posPage() {
         toast(e.message, true);
     } };
     submit.onclick = async () => { if (!cart.length)
-        return toast('أضف صنفاً واحداً على الأقل', true); if (cart.some(x => x.product.requiresPrescription) && !prescription.value)
+        return toast('أضف صنفاً واحداً على الأقل', true); if (posPrefs.confirmBeforeSale === true && !confirm('تأكيد اعتماد الفاتورة الحالية؟'))
+        return; if (cart.some(x => x.product.requiresPrescription) && !prescription.value)
         return toast('الفاتورة تحتوي صنفاً يتطلب روشتة', true); const requestedPoints = Math.max(0, Math.floor(Number(loyaltyPoints.value || 0))); if (requestedPoints > 0 && !customer.value)
         return toast('استبدال النقاط يتطلب اختيار عميل', true); try {
         const payload = { branchId: state.branch?.id, customerId: customer.value || null, payment: payment.value, prescriptionId: prescription.value || null, invoiceDiscount: Number(invoiceDiscount.value || 0), loyaltyPointsToRedeem: requestedPoints, creditOverrideReason: creditOverride.value.trim() || undefined, lines: cart.map(x => ({ productId: x.product.id, quantity: x.quantity })) }, fingerprint = JSON.stringify(payload);
@@ -150,9 +155,34 @@ export async function posPage() {
     finally {
         submit.disabled = false;
     } };
+    if (posPrefs.autoFocusPosSearch !== false)
+        window.setTimeout(() => search.focus(), 0);
+    const keyHandler = (e) => { if (e.key === 'F2') {
+        e.preventDefault();
+        search.focus();
+        search.select();
+    }
+    else if (e.key === 'F4') {
+        e.preventDefault();
+        suspendBtn.click();
+    }
+    else if (e.key === 'F9') {
+        e.preventDefault();
+        submit.click();
+    }
+    else if (e.key === 'Escape' && cart.length) {
+        e.preventDefault();
+        if (confirm('مسح الفاتورة الحالية؟')) {
+            cart.splice(0);
+            renderCart();
+            search.focus();
+        }
+    } };
+    document.addEventListener('keydown', keyHandler, { once: false });
     renderProducts();
     renderCart();
     return root;
 }
 function label(text, control) { return h('label', { class: 'field' }, h('span', {}, text), control); }
 function row(a, b) { return h('div', { class: 'total-row' }, h('span', {}, a), h('span', {}, b)); }
+function chip(labelText, value) { return h('div', { class: 'smart-pos-chip' }, h('small', {}, labelText), h('strong', {}, value)); }

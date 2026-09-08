@@ -3,10 +3,12 @@ import { h } from '../components/dom.js';
 import { state } from '../state/store.js';
 export async function replenishmentPage() {
     const root = h('div');
+    const settings = await api('/api/settings').catch(() => ({ preferences: {} })), pref = settings?.preferences ?? {}, preferred = Math.max(1, Number(pref.lowStockCoverageDays ?? 21));
     const target = h('select');
-    for (const days of [14, 21, 30, 45])
-        target.append(h('option', { value: String(days), selected: days === 21 }, `${days} يوم تغطية`));
-    const head = h('div', { class: 'section-head' }, h('div', {}, h('h2', {}, 'Push List — إعادة الطلب'), h('p', {}, 'اقتراح شراء من المبيعات الفعلية والمخزون وحد إعادة الطلب')), target);
+    const options = [...new Set([14, 21, 30, 45, preferred])].sort((a, b) => a - b);
+    for (const days of options)
+        target.append(h('option', { value: String(days), selected: days === preferred }, `${days} يوم تغطية`));
+    const head = h('div', { class: 'section-head' }, h('div', {}, h('h2', {}, 'Push List — إعادة الطلب'), h('p', {}, pref.reorderSuggestionsEnabled === false ? 'الأتمتة متوقفة من الإعدادات — يمكنك المراجعة اليدوية هنا' : 'اقتراح شراء من المبيعات الفعلية والمخزون وحد إعادة الطلب')), target);
     const summary = h('div', { class: 'grid kpis' }), box = h('section', { class: 'card section-gap' });
     root.append(head, summary, box);
     async function load() { const d = await api(`/api/replenishment/recommendations?branchId=${encodeURIComponent(state.branch?.id ?? '')}&targetDays=${target.value}`); const items = d.items ?? []; summary.replaceChildren(kpi('أصناف تحتاج طلب', String(d.actionable ?? 0)), kpi('حرج', String(items.filter(x => x.priority === 'critical').length)), kpi('مرتفع', String(items.filter(x => x.priority === 'high').length)), kpi('إجمالي مقترح', fmt(items.reduce((a, x) => a + x.suggestedQuantity, 0)))); const actionable = items.filter(x => x.suggestedQuantity > 0); box.replaceChildren(h('div', { class: 'card-title' }, h('h3', {}, 'قائمة الأولوية')), actionable.length ? table(actionable) : h('div', { class: 'empty' }, 'المخزون الحالي لا يحتاج إعادة طلب حسب البيانات المتاحة.')); }

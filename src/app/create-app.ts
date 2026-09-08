@@ -50,8 +50,8 @@ export function createApp(db: PostgresDatabase, config: AppConfig, suppliedRoot?
   app.use(authContext(config.appSecret));
   app.use(hydratePrincipal(root.identity));
 
-  app.get('/api/health', (_req:any,res:any) => res.json({ok:true,service:'elhafez-pharmacy',version:'8.0.0'}));
-  app.get('/api/ready',async(_req:any,res:any,next:any)=>{try{await db.query('SELECT 1');const applied=Number((await db.query<{count:number}>('SELECT count(*)::int count FROM app_migrations')).rows[0]?.count??0),expected=migrations.length;if(applied!==expected)return res.status(503).json({ok:false,database:'ready',migrations:{applied,expected},version:'8.0.0'});res.json({ok:true,database:'ready',migrations:{applied,expected},version:'8.0.0'});}catch(e){next(e);}});
+  app.get('/api/health', (_req:any,res:any) => res.json({ok:true,service:'elhafez-pharmacy',version:'8.1.0'}));
+  app.get('/api/ready',async(_req:any,res:any,next:any)=>{try{await db.query('SELECT 1');const applied=Number((await db.query<{count:number}>('SELECT count(*)::int count FROM app_migrations')).rows[0]?.count??0),expected=migrations.length;if(applied!==expected)return res.status(503).json({ok:false,database:'ready',migrations:{applied,expected},version:'8.1.0'});res.json({ok:true,database:'ready',migrations:{applied,expected},version:'8.1.0'});}catch(e){next(e);}});
   app.use('/api/setup', onboardingRoutes(root.setupService, db));
   app.use('/api/auth', identityRoutes(root.authService, root.identity));
   app.use('/api/organization', organizationRoutes(root.organization));

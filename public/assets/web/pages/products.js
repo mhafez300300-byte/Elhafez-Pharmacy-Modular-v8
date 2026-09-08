@@ -6,7 +6,21 @@ export async function productsPage() {
     card.append(h('div', { class: 'toolbar' }, search), table);
     const master = h('section', { class: 'card hidden', style: 'margin-top:13px' }, h('div', { class: 'section-head' }, h('div', {}, h('h3', {}, 'قاعدة الأدوية المركزية'), h('p', { id: 'masterCount' }, 'بحث بالاسم أو المادة الفعالة أو الشركة أو الباركود'))), h('div', { class: 'toolbar' }, h('input', { class: 'search-input', id: 'masterSearch', placeholder: 'اكتب حرفين أو أكثر…' }), h('button', { class: 'btn', id: 'masterRefresh' }, 'بحث')), h('div', { id: 'masterResults', class: 'table-wrap' }));
     root.append(head, card, master);
-    async function load() { const data = await api(`/api/products?q=${encodeURIComponent(search.value)}`); table.replaceChildren(data.items?.length ? renderTable(data.items, data.costVisible === true) : h('div', { class: 'empty' }, 'لا توجد أصناف بعد.')); }
+    async function open360(product) { try {
+        const [batches, health] = await Promise.all([api(`/api/inventory/batches?productId=${encodeURIComponent(product.id)}`), api(`/api/reports/stock-health`).catch(() => ({ items: [], costVisible: false }))]);
+        const hrow = (health.items ?? []).find((x) => x.productId === product.id);
+        const sellable = (batches.items ?? []).filter((x) => x.status === 'sellable' && Number(x.quantity) > 0);
+        const qty = sellable.reduce((n, x) => n + Number(x.quantity || 0), 0);
+        const nearest = sellable.filter((x) => x.expiryDate).sort((a, b) => String(a.expiryDate).localeCompare(String(b.expiryDate)))[0]?.expiryDate ?? null;
+        const margin = typeof product.costPrice === 'number' ? Number(product.sellingPrice) - Number(product.costPrice) : null;
+        const marginPct = margin != null && Number(product.sellingPrice) > 0 ? margin / Number(product.sellingPrice) * 100 : null;
+        const body = h('div', {}, h('div', { class: 'premium-modal-grid' }, mini('الرصيد الحالي', fmt(qty)), mini('أقرب صلاحية', nearest ? new Date(nearest).toLocaleDateString('ar-EG') : '—'), mini('بيع 30 يوم', fmt(Number(hrow?.sold30 ?? 0))), mini('حالة المخزون', statusAr(hrow?.status)), mini('سعر البيع', money(Number(product.sellingPrice || 0))), mini('التكلفة', typeof product.costPrice === 'number' ? money(Number(product.costPrice)) : '—'), mini('هامش الوحدة', margin == null ? '—' : money(margin)), mini('نسبة الهامش', marginPct == null ? '—' : `${marginPct.toFixed(1)}%`)), h('h3', { style: 'margin-top:18px' }, 'التشغيلات الحالية'), batchList(sellable));
+        modal(`${product.name} — ملف الدواء 360`, body, async () => { });
+    }
+    catch (e) {
+        toast(e.message ?? 'تعذر تحميل ملف الدواء 360', true);
+    } }
+    async function load() { const data = await api(`/api/products?q=${encodeURIComponent(search.value)}`); table.replaceChildren(data.items?.length ? renderTable(data.items, data.costVisible === true, open360) : h('div', { class: 'empty' }, 'لا توجد أصناف بعد.')); }
     async function loadMaster() { const q = master.querySelector('#masterSearch').value.trim(); const result = master.querySelector('#masterResults'); result.replaceChildren(h('div', { class: 'empty' }, 'جاري البحث…')); try {
         const data = await api(`/api/drug-master?q=${encodeURIComponent(q)}&limit=50`);
         (master.querySelector('#masterCount')).textContent = `${new Intl.NumberFormat('ar-EG').format(Number(data.count ?? 0))} دواء مرجعي — ابحث بالاسم أو المادة الفعالة أو الشركة أو الباركود`;
@@ -27,8 +41,8 @@ export async function productsPage() {
     await load();
     return root;
 }
-function renderTable(items, showCost) { const headers = ['الصنف', 'الباركود', 'سعر البيع', ...(showCost ? ['التكلفة'] : []), 'الضريبة', 'روشتة', 'الحالة']; const t = h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...headers.map(x => h('th', {}, x)))), h('tbody')); for (const p of items)
-    t.tBodies[0].append(h('tr', {}, h('td', {}, p.name), h('td', {}, p.barcode ?? '—'), h('td', {}, money(p.sellingPrice)), ...(showCost ? [h('td', {}, money(p.costPrice))] : []), h('td', {}, `${p.taxRate ?? 0}%`), h('td', {}, p.requiresPrescription ? 'مطلوبة' : 'لا'), h('td', {}, h('span', { class: `tag ${p.active ? 'success' : ''}` }, p.active ? 'نشط' : 'موقوف')))); return t; }
+function renderTable(items, showCost, open360) { const headers = ['الصنف', 'الباركود', 'سعر البيع', ...(showCost ? ['التكلفة'] : []), 'الضريبة', 'روشتة', 'الحالة', '']; const t = h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...headers.map(x => h('th', {}, x)))), h('tbody')); for (const p of items)
+    t.tBodies[0].append(h('tr', {}, h('td', {}, p.name), h('td', {}, p.barcode ?? '—'), h('td', {}, money(p.sellingPrice)), ...(showCost ? [h('td', {}, money(p.costPrice))] : []), h('td', {}, `${p.taxRate ?? 0}%`), h('td', {}, p.requiresPrescription ? 'مطلوبة' : 'لا'), h('td', {}, h('span', { class: `tag ${p.active ? 'success' : ''}` }, p.active ? 'نشط' : 'موقوف')), h('td', {}, h('button', { class: 'btn tiny', onClick: () => void open360(p) }, '360')))); return t; }
 function masterTable(items, done) { const t = h('table', { class: 'table' }, h('thead', {}, h('tr', {}, ...['الدواء', 'المادة الفعالة', 'الشركة', 'الشكل', 'السعر الرسمي', 'روشتة', 'إضافة'].map(x => h('th', {}, x)))), h('tbody')); for (const d of items) {
     const btn = h('button', { class: 'btn sm primary', onClick: () => openAdopt(d, done) }, 'إضافة للصيدلية');
     t.tBodies[0].append(h('tr', {}, h('td', {}, h('strong', {}, d.nameAr), h('small', { class: 'muted', style: 'display:block' }, [d.barcode, d.gtin].filter(Boolean).join(' • ') || 'بدون باركود')), h('td', {}, (d.activeIngredients ?? []).join(' + ') || '—'), h('td', {}, d.manufacturer ?? '—'), h('td', {}, [d.strength, d.dosageForm].filter(Boolean).join(' • ') || '—'), h('td', {}, d.officialPrice == null ? '—' : money(d.officialPrice)), h('td', {}, d.requiresPrescription ? 'مطلوبة' : 'لا'), h('td', {}, btn)));
@@ -37,3 +51,8 @@ function openAdopt(d, done) { const body = h('div', { class: 'form-grid' }, h('d
 function openAdd(done) { const rx = h('input', { name: 'requiresPrescription', type: 'checkbox' }), body = h('div', { class: 'form-grid' }, field('name', 'اسم الصنف', 'text', true), field('barcode', 'الباركود'), field('sku', 'SKU'), field('sellingPrice', 'سعر البيع', 'number', true), field('costPrice', 'التكلفة', 'number', true), field('taxRate', 'الضريبة %', 'number'), field('reorderLevel', 'حد إعادة الطلب', 'number'), h('label', { class: 'check' }, rx, h('span', {}, 'يتطلب روشتة')), field('controlledClass', 'تصنيف الدواء الخاضع للرقابة')); modal('إضافة صنف', body, async (form) => { const fd = new FormData(form); await post('/api/products', { name: fd.get('name'), barcode: fd.get('barcode'), sku: fd.get('sku'), sellingPrice: Number(fd.get('sellingPrice')), costPrice: Number(fd.get('costPrice')), taxRate: Number(fd.get('taxRate') || 0), reorderLevel: Number(fd.get('reorderLevel') || 0), requiresPrescription: fd.get('requiresPrescription') === 'on', controlledClass: fd.get('controlledClass') || null }); toast('تم إنشاء الصنف'); await done(); }); }
 function field(name, label, type = 'text', required = false) { return h('label', { class: 'field' }, h('span', {}, label), h('input', { name, type, required, step: type === 'number' ? '0.01' : undefined, min: type === 'number' ? '0' : undefined })); }
 function num(name, label, value) { return h('label', { class: 'field' }, h('span', {}, label), h('input', { name, type: 'number', required: true, step: '0.01', min: '0', value: String(value) })); }
+function mini(label, value) { return h('div', { class: 'mini-stat' }, h('small', {}, label), h('strong', {}, value)); }
+function fmt(v) { return Number(v || 0).toLocaleString('ar-EG', { maximumFractionDigits: 2 }); }
+function statusAr(s) { return s === 'out' ? 'نافد' : s === 'low' ? 'منخفض' : s === 'slow' ? 'راكد' : s === 'healthy' ? 'صحي' : '—'; }
+function batchList(items) { if (!items.length)
+    return h('div', { class: 'empty' }, 'لا توجد تشغيلات متاحة للبيع.'); return h('div', { class: 'batch-timeline' }, ...items.slice(0, 20).map((x) => h('div', { class: 'batch-row' }, h('div', {}, h('b', {}, x.batchNo || 'بدون رقم تشغيلة'), h('small', { class: 'muted', style: 'display:block' }, x.receivedAt ? `استلام ${new Date(x.receivedAt).toLocaleDateString('ar-EG')}` : '')), h('span', {}, `${fmt(x.quantity)} وحدة`), h('span', {}, x.expiryDate ? new Date(x.expiryDate).toLocaleDateString('ar-EG') : 'بدون صلاحية')))); }
